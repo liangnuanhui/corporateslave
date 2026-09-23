@@ -25,7 +25,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div class="hud"><div class="portrait"></div><div class="hud-details"><div class="health-row"><span class="heart">♥</span><div class="health-track"><div id="health-fill"></div><strong id="health-label">100 / 100</strong></div></div><div class="coins"><span class="coin-icon">₵</span><strong id="coins">—</strong><span>下班积分</span></div></div></div>
       <div class="zone-label" id="zone-label">1F · 办公室全景</div>
       <div class="stage-message" id="stage-message" hidden></div>
-      <div class="stage-bottom"><span id="stage-hint">WASD 移动人物 · 走门进出 · 滚轮以光标为中心缩放 · 方向键 / 鼠标推到边缘移动视角</span><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div>
+      <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div>
     </section>
     <aside class="mission">
       <div class="mission-top"><a class="brand mini" href="/">${icon('coffee')}<span>牛马上班</span></a><button id="connection" class="connection"><i></i><span>尚未连接</span><small id="ping">—</small></button></div>
@@ -37,7 +37,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div class="roster-heading"><h3>当前房间成员 <span id="member-count">0/24</span></h3><span class="live-dot"></span></div><div id="roster" class="roster"><p class="empty-roster">登录后，看看谁还没下班。</p></div>
       <div class="room-bottom"><span id="room-label">等待加入办公室</span><button id="invite" class="icon-button" aria-label="复制房间邀请链接" title="邀请伙伴">${icon('share')}</button></div>
     </aside></div>
-    <section class="control-strip" aria-label="操作说明"><button id="profile-button" class="identity"><div class="portrait small"></div><span><strong id="player-name">你的工位，已预留</strong><small id="player-role">创建一个虚构角色，开始冒险</small></span></button><div class="keyboard-controls"><span><kbd class="wide">WASD</kbd>移动</span><span id="secondary-control">滚轮缩放 · 方向键移视角</span><span><kbd>J</kbd>攻击</span><span><kbd>E</kbd>互动</span></div><span class="control-note">收工，才是正经事。</span></section>
+    <section class="control-strip" aria-label="操作说明"><button id="profile-button" class="identity"><div class="portrait small"></div><span><strong id="player-name">你的工位，已预留</strong><small id="player-role">创建一个虚构角色，开始冒险</small></span></button><div class="keyboard-controls"><span><kbd class="wide">WASD</kbd>/<kbd>方向键</kbd>移动</span><span id="secondary-control">滚轮缩放 · 拖拽移视角</span><span><kbd>J</kbd>攻击</span><span><kbd>E</kbd>互动</span></div><span class="control-note">收工，才是正经事。</span></section>
     <div class="touch-controls" aria-label="触屏操作"><button data-touch="left" aria-label="向左移动">←</button><button data-touch="right" aria-label="向右移动">→</button><button data-touch="up" aria-label="向上移动">↑</button><button data-touch="down" aria-label="向下移动">↓</button><button data-touch="jump" id="touch-jump" hidden>跳跃</button><button data-touch="attack">攻击</button><button id="touch-interact">互动</button></div>
     <footer><span>本故事纯属虚构，如有雷同，应该是人生。</span><span>多人体验版 <span class="footer-dot">·</span> MVP 0.1</span></footer>
   </main>
@@ -105,7 +105,7 @@ function renderSnapshot() {
   const actor = snap?.players.find(a => a.id === p?.id);
   const place = actor ? (actor.area === 'corridor' ? roomAt(actor.x, actor.y)?.name || '公共走廊' : AREAS[actor.area].name) : '办公室全景';
   $('zone-label').textContent = dungeon ? 'B1 · 加班清理副本' : `1F · ${place}`;
-  $('secondary-control').textContent = dungeon ? 'SPACE 跳跃' : '滚轮缩放 · 方向键移视角';
+  $('secondary-control').textContent = dungeon ? 'SPACE 跳跃' : '滚轮缩放 · 拖拽移视角';
   $('touch-jump').hidden = !dungeon;
   document.querySelectorAll<HTMLElement>('[data-touch=up], [data-touch=down]').forEach(button => button.hidden = dungeon);
   $('member-count').textContent = `${snap?.players.length||0}/${dungeon?8:24}`;
@@ -120,7 +120,7 @@ function renderSnapshot() {
   $('primary').innerHTML = !p?`创建角色${icon('arrow')}`:!network.connected?`重新连接${icon('arrow')}`:!dungeon?`进入副本${icon('arrow')}`:complete?(rewardClaimed?`收工，返回办公室${icon('arrow')}`:`领取 80 积分${icon('arrow')}`):`挑战进行中 <span>${killed}/3</span>`;
   ($('primary') as HTMLButtonElement).disabled = !!(dungeon&&!complete&&network.connected) || network.busy;
   $('return-office').hidden = !dungeon || rewardClaimed;
-  $('stage-hint').textContent = dungeon?(complete?'挑战完成！别忘了领取你的下班奖励。':'J 攻击 · SPACE 跳跃躲避 · 体力耗尽后 3 秒恢复'): 'WASD 移动人物 · 走门进出 · 滚轮以光标为中心缩放 · 方向键 / 鼠标推到边缘移动视角';
+  $('stage-hint').textContent = dungeon?(complete?'挑战完成！别忘了领取你的下班奖励。':'J 攻击 · SPACE 跳跃躲避 · 体力耗尽后 3 秒恢复'): 'WASD 或方向键移动 · 走门进出 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角';
   $('stage-message').hidden = hp>0 && !complete;
   $('stage-message').textContent = hp<=0?'咖啡时间 · 3 秒后恢复':rewardClaimed?'下班积分 +80 · 今天辛苦了！':'加班怪已清空 · 准时下班！';
   const rosterHtml = snap?.players.map(actor=>`<div class="roster-row ${actor.id===p?.id?'self':''}"><div class="mini-avatar"></div><span>${escape(actor.name)}</span><small>${actor.id===p?.id?'我':ROLES.find(r=>r.id===actor.role)?.name||'同伴'}</small></div>`).join('')||'<p class="empty-roster">登录后，看看谁还没下班。</p>';

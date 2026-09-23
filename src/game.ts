@@ -55,7 +55,7 @@ export class OfficeScene extends Phaser.Scene {
     window.addEventListener('blur', () => this.resetInput());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.resetInput(); });
     this.isReady = true;
-    this.game.canvas.setAttribute('aria-label', '俯瞰办公室，W A S D 移动人物，方向键或鼠标推到边缘移动视角，滚轮以光标为中心缩放，拖拽查看，E 互动');
+    this.game.canvas.setAttribute('aria-label', '俯瞰办公室，W A S D 或方向键移动人物，滚轮以光标为中心缩放，拖拽或把鼠标推到画面边缘移动视角，E 互动');
   }
   touchInput(key: keyof typeof this.touch, value: boolean) { this.touch[key] = value; if (key === 'jump' && value) this.jumpQueued = true; }
   resetInput() {
@@ -80,10 +80,10 @@ export class OfficeScene extends Phaser.Scene {
     if (this.inputElapsed >= 1000 / 30) {
       this.inputElapsed %= 1000 / 30;
       const input: Input = {
-        left: !blocked && (this.keys.A.isDown || (!office && this.keys.LEFT.isDown) || this.touch.left),
-        right: !blocked && (this.keys.D.isDown || (!office && this.keys.RIGHT.isDown) || this.touch.right),
-        up: office && !blocked && (this.keys.W.isDown || this.touch.up),
-        down: office && !blocked && (this.keys.S.isDown || this.touch.down),
+        left: !blocked && (this.keys.A.isDown || this.keys.LEFT.isDown || this.touch.left),
+        right: !blocked && (this.keys.D.isDown || this.keys.RIGHT.isDown || this.touch.right),
+        up: office && !blocked && (this.keys.W.isDown || this.keys.UP.isDown || this.touch.up),
+        down: office && !blocked && (this.keys.S.isDown || this.keys.DOWN.isDown || this.touch.down),
         jump: !blocked && this.jumpQueued, attack: !blocked && (this.keys.J.isDown || this.touch.attack), seq: ++this.seq,
       };
       this.network.input(input); this.jumpQueued = false;

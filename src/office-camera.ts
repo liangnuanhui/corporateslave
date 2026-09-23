@@ -6,9 +6,8 @@ export interface CameraView { x: number; y: number; width: number; height: numbe
 
 /** Screen pixels from the viewport border that start an RTS-style edge scroll. */
 const EDGE = 28;
-/** Pan speeds in screen pixels per second, so panning feels the same at every zoom. */
+/** Pan speed in screen pixels per second, so panning feels the same at every zoom. */
 const EDGE_SPEED = 780;
-const KEY_SPEED = 920;
 const ZOOM_RESPONSE = 90;
 
 /**
@@ -27,11 +26,9 @@ export class OfficeCamera {
   private dragging?: { x: number; y: number };
   private pinchDistance = 0;
   private pointer = { x: 0, y: 0, inside: false };
-  private keys: Record<string, Phaser.Input.Keyboard.Key>;
   constructor(private scene: Phaser.Scene, private blocked: () => boolean) {
     scene.input.addPointer(1);
     scene.input.mouse?.disableContextMenu();
-    this.keys = scene.input.keyboard!.addKeys('LEFT,RIGHT,UP,DOWN') as Record<string, Phaser.Input.Keyboard.Key>;
     scene.input.on('wheel', (pointer: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
       if (!this.active || this.blocked()) return;
       this.zoomBy(Math.exp(-dy * .0016), pointer.x, pointer.y);
@@ -139,11 +136,11 @@ export class OfficeCamera {
     } else if (this.following && actor) { this.center.x = actor.x; this.center.y = actor.y; this.apply(); }
     else this.apply();
   }
-  /** Arrow keys, plus an edge scroll while the cursor rests against the viewport border. */
+  /** Edge scroll while the cursor rests against the viewport border. The arrow keys belong
+   *  to the character, so the mouse is the only keyboard-free way to move the view. */
   private panInput(step: number) {
     if (this.blocked() || document.hidden || !document.hasFocus()) return;
-    let x = (Number(this.keys.RIGHT.isDown) - Number(this.keys.LEFT.isDown)) * KEY_SPEED * step;
-    let y = (Number(this.keys.DOWN.isDown) - Number(this.keys.UP.isDown)) * KEY_SPEED * step;
+    let x = 0, y = 0;
     if (this.pointer.inside && !this.dragging) {
       const left = this.pointer.x - this.camera.x, right = this.camera.x + this.camera.width - this.pointer.x;
       const top = this.pointer.y - this.camera.y, bottom = this.camera.y + this.camera.height - this.pointer.y;
