@@ -53,17 +53,22 @@ export class WorldRoom extends Room {
     return profile;
   }
   /** New arrivals are scattered across every open area, so the floor never looks like a queue at
-   *  reception. To spawn only inside rooms, clear corridor.spawnPoints — no code change needed. */
+   *  reception. To spawn only inside rooms, clear corridor.spawnPoints — no code change needed.
+   *  The anti-overlap rule (favour the candidate furthest from anyone already in that area) only
+   *  narrows things down to the equally-good set — an empty floor makes every spawn point equally
+   *  good (score Infinity), so pick uniformly at random among ties rather than always the first
+   *  one in iteration order. Distances are floats, so "tied" is `within EPS`, not `===`. */
   private pickSpawn() {
     const candidates = Object.values(AREAS).flatMap(area => area.spawnPoints.map(point => ({ area: area.id, ...point })));
     const taken = [...this.players.values()];
-    let best = candidates[0], bestScore = -1;
-    for (const c of candidates) {
+    const scored = candidates.map(c => {
       const near = taken.filter(p => p.area === c.area);
-      const score = near.length ? Math.min(...near.map(p => Math.hypot(p.x - c.x, p.y - c.y))) : Infinity;
-      if (score > bestScore) { bestScore = score; best = c; }
-    }
-    return best;
+      return { c, score: near.length ? Math.min(...near.map(p => Math.hypot(p.x - c.x, p.y - c.y))) : Infinity };
+    });
+    const bestScore = Math.max(...scored.map(s => s.score));
+    const EPS = 1; // px; guards against float noise without conflating genuinely different distances
+    const tied = scored.filter(s => bestScore === Infinity ? s.score === Infinity : bestScore - s.score < EPS);
+    return tied[Math.floor(Math.random() * tied.length)].c;
   }
   onJoin(client: Client, _options: unknown, profile: Profile) {
     if (activeAccounts.has(profile.id)) throw new Error('角色已在另一个窗口上线；断线后请稍等 12 秒');

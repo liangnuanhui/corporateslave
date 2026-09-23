@@ -45,6 +45,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     // bound has to be the current area's own width rather than a corridor-shaped constant.
     const cheated = va.snap!.players.find(p=>p.id===a.profile.id)!;
     assert.ok(cheated.x<AREAS[cheated.area].width);
+    console.log(`integration: player A spawned in ${cheated.area}`); // random spawn (Task 4) — visible proof this varies run to run
     let officeSeq = 15;
     const myself = () => va.snap!.players.find(p => p.id === a.profile.id)!;
     // Read through a function (not `va.transition` directly) — TS narrows a property right after
