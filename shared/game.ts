@@ -1,3 +1,4 @@
+import type { AreaId } from './world/types.js';
 export const WORLD = { width: 1280, height: 720, floor: 552, tick: 1 / 30, speed: 235, gravity: 1450, jump: -565 };
 export const ROLES = [
   { id: 'rookie', name: '职场新人', detail: '轻装上阵，认真下班', attack: 18, color: '#a6e8c2' },
@@ -14,7 +15,7 @@ export type WeaponId = typeof WEAPONS[number]['id'];
 export type Zone = 'office' | 'dungeon';
 export interface Profile { id: string; username: string; name: string; role: RoleId; coins: number; weapon: WeaponId; owned: WeaponId[]; clears: number }
 export interface Input { left: boolean; right: boolean; up: boolean; down: boolean; jump: boolean; attack: boolean; seq: number }
-export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number }
+export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number; area: AreaId }
 export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string }
 export interface Snapshot { roomId: string; zone: Zone; tick: number; players: Actor[]; enemies: Enemy[]; status: 'playing' | 'complete'; wave: number }
 export const idleInput = (): Input => ({ left: false, right: false, up: false, down: false, jump: false, attack: false, seq: 0 });

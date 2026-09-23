@@ -1,12 +1,12 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { corridor, moveIn } from '../shared/world/index.js';
+import { AREAS, corridor, moveIn, exitAt, type Area } from '../shared/world/index.js';
 import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
 export const activeAccounts = new Map<string, string>();
-interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean }
+interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number }
 interface Monster extends Enemy { attackAt: number; actionUntil: number }
 
 export class WorldRoom extends Room {
@@ -59,8 +59,8 @@ export class WorldRoom extends Room {
     this.players.set(client.sessionId, {
       id: profile.id, name: profile.name, role: profile.role, profile,
       x: (this.zone === 'office' ? corridor.spawnPoints[0].x : 160) + this.players.size * 45, y: this.zone === 'office' ? corridor.spawnPoints[0].y : WORLD.floor, vy: 0, face: 1, hp: 100,
-      weapon: profile.weapon, action: 'idle', ack: 0, input: idleInput(), lastInput: 0,
-      attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false,
+      weapon: profile.weapon, action: 'idle', ack: 0, area: 'corridor', input: idleInput(), lastInput: 0,
+      attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false, exitCooldown: 0, noticeAt: -10000,
     });
     client.send('profile', profile);
     this.broadcast('snapshot', this.snapshot());
@@ -85,13 +85,18 @@ export class WorldRoom extends Room {
   }
   private step() {
     this.tickNumber++; this.elapsed += 1000 / 30;
-    for (const p of this.players.values()) {
+    for (const [sid, p] of this.players) {
       if (p.hp <= 0) {
-        if (this.elapsed >= p.respawnAt) { p.hp = 100; p.x = 160; p.y = WORLD.floor; p.vy = 0; p.hurtAt = this.elapsed; }
+        if (this.elapsed >= p.respawnAt) {
+          const spawn = this.zone === 'office' ? AREAS[p.area].spawnPoints[0] : { x: 160, y: WORLD.floor };
+          p.hp = 100; p.x = spawn.x; p.y = spawn.y; p.vy = 0; p.hurtAt = this.elapsed;
+        }
         else continue;
       }
       const input = this.elapsed - p.lastInput > 350 || p.dropped ? idleInput() : p.input;
-      if (this.zone === 'office') moveIn(corridor, p, input); else move(p, input);
+      const area = this.zone === 'office' ? AREAS[p.area] : undefined;
+      if (area) moveIn(area, p, input); else move(p, input);
+      if (area && this.elapsed >= p.exitCooldown) this.tryExit(sid, p, area);
       p.ack = p.input.seq;
       // Jump is an edge-triggered command; holding it cannot cause repeated jumps.
       p.input.jump = false;
@@ -132,16 +137,31 @@ export class WorldRoom extends Room {
     }
     if (this.tickNumber % 2 === 0) this.broadcast('snapshot', this.snapshot());
   }
+  /** The server switches area immediately; the client's fade is pure presentation. */
+  private tryExit(sessionId: string, p: Player, area: Area) {
+    const exit = exitAt(area, p.x, p.y);
+    if (!exit) return;
+    const client = this.clients.find(c => c.sessionId === sessionId);
+    if (exit.locked) {
+      // Rate-limited: standing on a locked threshold would otherwise fire ~30 notices/second.
+      if (this.elapsed - p.noticeAt > 2500) { p.noticeAt = this.elapsed; client?.send('notice', `${exit.label}还在装修中，敬请期待`); }
+      return;
+    }
+    p.area = exit.to; p.x = exit.at.x; p.y = exit.at.y; p.vy = 0;
+    p.exitCooldown = this.elapsed + 400;
+    client?.send('transition', { to: exit.to, name: AREAS[exit.to].name });
+  }
   private snapshot(): Snapshot {
     return {
       roomId: this.roomId, zone: this.zone, tick: this.tickNumber, status: this.status, wave: 1,
-      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, role: p.role, x: p.x, y: p.y, vy: p.vy, face: p.face, hp: p.hp, weapon: p.weapon, action: p.action, ack: p.ack })),
+      players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, role: p.role, x: p.x, y: p.y, vy: p.vy, face: p.face, hp: p.hp, weapon: p.weapon, action: p.action, ack: p.ack, area: p.area })),
       enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action })),
     };
   }
   private async shop(client: Client, message: { weapon?: string }) {
     const p = this.players.get(client.sessionId); if (!p || this.pending.has(p.id)) return;
     if (this.zone !== 'office') { client.send('notice', '请返回公共办公室购买装备'); return; }
+    if (p.area !== 'storage') { client.send('notice', '请到储物间的装备台前购买'); return; }
     this.pending.add(p.id);
     try { const profile = await database.purchase(p.id, String(message?.weapon)); p.profile = profile; p.weapon = profile.weapon; client.send('profile', profile); client.send('notice', '装备已更新，准备出发！'); }
     catch (error) { client.send('notice', (error as Error).message); }

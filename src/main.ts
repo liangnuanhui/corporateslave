@@ -1,7 +1,7 @@
 import './style.css';
 import { Network } from './network';
 import { createGame } from './game';
-import { roomAt } from '../shared/world';
+import { roomAt, AREAS } from '../shared/world';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
 import { ROLES, WEAPONS, damageFor, type Zone } from '../shared/game';
 
@@ -72,8 +72,8 @@ function initialJoin() {
 function interact() {
   if (!network.profile) { show(authDialog); return; }
   const actor = network.snapshot?.players.find(p=>p.id===network.profile!.id);
-  if (network.snapshot?.zone === 'office' && actor && actor.x > 1620 && Math.abs(actor.y - 600) < 65) void join('dungeon');
-  else if (network.snapshot?.zone === 'office' && actor && roomAt(actor.x, actor.y)?.id === 'storage') openShop();
+  if (network.snapshot?.zone === 'office' && actor && actor.area === 'corridor' && actor.x > 1620 && Math.abs(actor.y - 600) < 65) void join('dungeon');
+  else if (network.snapshot?.zone === 'office' && actor && actor.area === 'storage') openShop();
   else if (network.snapshot?.status === 'complete') network.room?.send('claim');
   else toast(network.snapshot?.zone==='dungeon'?'按 J 攻击加班怪，空格跳跃躲避。':'沿走廊从门口进出房间；储物间按 E 选装备，走廊最右侧按 E 进入副本。');
 }
@@ -103,7 +103,7 @@ function renderSnapshot() {
   if (snap?.roomId !== currentRoom) { currentRoom = snap?.roomId || ''; rewardClaimed=false; }
   const dungeon = snap?.zone === 'dungeon', complete=snap?.status==='complete';
   const actor = snap?.players.find(a => a.id === p?.id);
-  const place = actor ? roomAt(actor.x, actor.y)?.name || '公共走廊' : '办公室全景';
+  const place = actor ? (actor.area === 'corridor' ? roomAt(actor.x, actor.y)?.name || '公共走廊' : AREAS[actor.area].name) : '办公室全景';
   $('zone-label').textContent = dungeon ? 'B1 · 加班清理副本' : `1F · ${place}`;
   $('secondary-control').textContent = dungeon ? 'SPACE 跳跃' : '滚轮缩放 · 方向键移视角';
   $('touch-jump').hidden = !dungeon;

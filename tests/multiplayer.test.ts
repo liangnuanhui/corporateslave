@@ -53,31 +53,85 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       }, 10000);
       await pause(100);
     };
-    // Room interiors are now sealed area footprints (see shared/world/corridor.ts) rather than
-    // open corridor floor, so this no longer walks players INTO each room. It asserts both
-    // halves of the new behavior: the doorway is still reachable (this fails if the
-    // ROOM_INTERIORS clearance regresses to WALL_SIZE — see the CLEARANCE comment in
-    // corridor.ts, the player then halts short of the threshold) and entry is blocked, with a
-    // discriminating cross-client sync check so a frozen/broken sync path can't pass silently.
+    // The server now actually switches `area` at the door (Task 3), so a player walking into
+    // 大会议室/储物间 lands inside that room's own coordinate space rather than resting at the
+    // corridor threshold. Cross-client agreement therefore can't be a raw distance check once
+    // the two clients are in different areas — a naive `hypot` across coordinate spaces would be
+    // meaningless. Instead we assert both clients' own snapshots agree on player A's `area` and
+    // (within that area's own space) position.
+    const assertAgree = () => {
+      const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
+      assert.equal(observer.area, myself().area, '两个客户端看到的 area 不一致');
+      assert.ok(Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40, '两个客户端看到的位置偏差过大');
+    };
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room), fromAbove = room.door === 'top';
+      const open = room.id === 'meeting' || room.id === 'storage';
+      va.notice = undefined;
       await walkTo('x', door.x);
       await walkTo('y', door.y + (fromAbove ? -60 : 60));
       for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
-      await until(() => {
-        const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
-        return Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40;
-      });
-      const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
-      // Measured empirically: halts ~1.7px from door.y with CLEARANCE=14, ~5.6px with the
-      // brief's original WALL_SIZE=12 — tolerance 4 sits cleanly between the two.
-      assert.ok(Math.abs(myself().y - door.y) < 4, `${room.name} 应该能走到门口 (y=${myself().y.toFixed(2)}, door.y=${door.y})`);
-      assert.equal(roomAt(myself().x, myself().y), undefined, `${room.name} 不应该被走进去`);
-      assert.ok(Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40, `${room.name} 观察者同步的位置偏差过大`);
+      if (open) {
+        // Falsifiable by: tryExit never firing (area stays 'corridor'), or firing into the wrong
+        // area (exit.to / AREAS lookup wrong), or the exit.at landing point being unreachable.
+        await until(() => myself().area === room.id, 10000);
+        assertAgree();
+        console.log(`integration: entered ${room.name}`);
+        // Push through the room's own door for a fixed duration, same technique as the corridor
+        // approach above. A coarse walkTo() convergence (16px tolerance) can halt just short of
+        // the room's own 26px-tall trigger band without ever actually entering it.
+        const outward = room.id === 'storage' ? { up: true } : { down: true };
+        for (let i = 0; i < 30; i++) { ra.send('input', { ...outward, seq: ++officeSeq }); await pause(34); }
+        await until(() => myself().area === 'corridor', 10000);
+        assertAgree();
+        console.log(`integration: left ${room.name} back to corridor`);
+      } else {
+        // Falsifiable by: area actually changing (tryExit not respecting `locked`), or no notice
+        // arriving (tryExit never being called at all — asserting area-stayed-corridor alone
+        // would pass even with tryExit fully disabled, since a locked room's walls already block
+        // entry geometrically).
+        assert.equal(myself().area, 'corridor', `${room.name} 不应该能进入`);
+        assert.equal(roomAt(myself().x, myself().y), undefined, `${room.name} 不应该被走进去`);
+        await until(() => !!va.notice, 10000);
+        assert.ok(va.notice!.includes(room.name), `${room.name} 的提示应该点名房间 (got: ${va.notice})`);
+        assertAgree();
+      }
       await walkTo('y', corridor.spawnPoints[0].y);
-      assert.equal(roomAt(myself().x, myself().y), undefined);
     }
     console.log('integration: six rooms entered/exited and synced to second player');
+    // spec: 断线 12 秒内重连回到原 area 原位置. Walk into 大会议室, force a drop, reconnect, and
+    // confirm the player is still in area 'meeting' at (nearly) the same room-local position —
+    // this has no other coverage (the snapshot-recovery test below only exercises the office
+    // zone's default corridor spawn).
+    {
+      const meetingRoom = CORRIDOR_ROOMS.find(r => r.id === 'meeting')!;
+      const meetingDoor = doorway(meetingRoom);
+      await walkTo('x', meetingDoor.x);
+      await walkTo('y', meetingDoor.y + 60);
+      for (let i = 0; i < 20; i++) { ra.send('input', { up: true, seq: ++officeSeq }); await pause(34); }
+      await until(() => myself().area === 'meeting', 10000);
+      const before = { x: myself().x, y: myself().y };
+      // `ra.leave(false)` (consented=false) closes the socket with an abnormal code, and the SDK's
+      // Room itself reacts by auto-reconnecting in place (see @colyseus/sdk Room.ts
+      // handleReconnection/retryReconnection) — there's no need to call sdk.reconnect() ourselves,
+      // and doing so raced the built-in retry for the same reconnectionToken and hung forever.
+      // `leave()`'s own returned promise resolves via the room's `onLeave` signal, which this SDK
+      // only invokes on final failure/consented-leave, never on a *successful* auto-reconnect — so
+      // awaiting it here would hang too. Fire the drop without awaiting it and watch `onReconnect`.
+      const reconnected = new Promise<void>(resolve => ra.onReconnect.once(resolve));
+      void ra.leave(false).catch(() => {});
+      await reconnected;
+      va.notice = undefined; va.snap = undefined; // clear pre-drop snapshot so the check below can't pass on stale data
+      ra.send('sync');
+      await until(() => !!va.snap?.players.find(p => p.id === a.profile.id), 10000);
+      const after = va.snap!.players.find(p => p.id === a.profile.id)!;
+      assert.equal(after.area, 'meeting', '重连后不在原 area');
+      assert.ok(Math.hypot(after.x - before.x, after.y - before.y) < 40, '重连后位置漂移过大');
+      console.log('integration: reconnect kept the area');
+      for (let i = 0; i < 30; i++) { ra.send('input', { down: true, seq: ++officeSeq }); await pause(34); }
+      await until(() => myself().area === 'corridor', 10000);
+      await walkTo('y', corridor.spawnPoints[0].y);
+    }
     ra.send('claim');await until(()=>!!va.notice);
     assert.equal((await fetch(base+'/api/me',{headers:{Authorization:`Bearer ${a.token}`}}).then(r=>r.json())).coins,30);
     await ra.leave();
@@ -95,6 +149,27 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     dungeon.send('claim');await until(()=>!!vd.reward);assert.equal(vd.reward.awarded,true);
     vd.reward=undefined;dungeon.send('claim');await until(()=>!!vd.reward);assert.equal(vd.reward.awarded,false);
     await dungeon.leave();const office=await sdk.joinOrCreate('world',{zone:'office',token:a.token});rooms.push(office);const vo=watch(office);
+    // The equipment counter now lives inside 储物间 (Task 3's shop-area gate), so a fresh join
+    // (which spawns in the corridor) must walk there before buying.
+    {
+      await until(() => !!vo.snap);
+      const oMe = () => vo.snap!.players.find(p => p.id === a.profile.id)!;
+      let oSeq = 0;
+      const oWalkTo = async (axis: 'x' | 'y', target: number) => {
+        await until(async () => {
+          const distance = target - oMe()[axis];
+          if (Math.abs(distance) < 16) { office.send('input', { seq: ++oSeq }); return true; }
+          office.send('input', { left: axis === 'x' && distance < 0, right: axis === 'x' && distance > 0, up: axis === 'y' && distance < 0, down: axis === 'y' && distance > 0, seq: ++oSeq });
+          return false;
+        }, 10000);
+        await pause(100);
+      };
+      const storageDoor = doorway(CORRIDOR_ROOMS.find(r => r.id === 'storage')!); // door: 'top' — corridor is above, so entry means increasing y
+      await oWalkTo('x', storageDoor.x);
+      await oWalkTo('y', storageDoor.y - 60);
+      for (let i = 0; i < 20; i++) { office.send('input', { down: true, seq: ++oSeq }); await pause(34); }
+      await until(() => oMe().area === 'storage', 10000);
+    }
     office.send('shop',{weapon:'keyboard'});await until(()=>vo.profile?.weapon==='keyboard');
     assert.equal(vo.profile!.coins,50);
     await office.leave();await rb.leave();await stop(server);
