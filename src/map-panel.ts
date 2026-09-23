@@ -1,5 +1,5 @@
-import { corridor, CORRIDOR_ROOMS, roomAt, AREAS, projectTo, type Area, type AreaId } from '../shared/world';
-import type { Actor } from '../shared/game';
+import { corridor, roomAt, AREAS, type Area, type AreaId } from '../shared/world';
+import { corridorMarkup, roomMarkup, minimapDots, type MinimapDot } from './minimap';
 import type { OfficeScene } from './game';
 import type { CameraView } from './office-camera';
 import type { Network } from './network';
@@ -19,27 +19,6 @@ export const mapPanelMarkup = `
   </div>`;
 
 const get = (id: string) => document.getElementById(id)!;
-
-// The corridor plan mirrors the six-room floor art; a room plan is just its own footprint,
-// walls, furniture and exit — there is no wider floor to show once you're inside one.
-function corridorMarkup() {
-  return `<rect x="40" y="60" width="1840" height="1080" rx="12" fill="#263830"/>
-    <path d="M80 600H1840" stroke="#566954" stroke-width="120"/>
-    ${CORRIDOR_ROOMS.map(room => `<g data-map-room="${room.id}" tabindex="0" role="button" aria-label="查看${room.name}" class="map-room"><rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}" fill="#42574a"/><text x="${room.x + room.width / 2}" y="${room.y + room.height / 2}" text-anchor="middle" dominant-baseline="central">${room.name}</text></g>`).join('')}
-    <g fill="#85937b" pointer-events="none">${corridor.walls.map(w => `<rect x="${w.x}" y="${w.y}" width="${w.width}" height="${w.height}"/>`).join('')}</g>
-    <rect id="map-viewport" class="map-viewport" x="0" y="0" width="1920" height="1200"/>
-    <g id="map-players" pointer-events="none"></g>`;
-}
-
-function roomMarkup(area: Area) {
-  return `<rect x="0" y="0" width="${area.width}" height="${area.height}" rx="12" fill="#263830"/>
-    <rect x="${area.bounds.x}" y="${area.bounds.y}" width="${area.bounds.width}" height="${area.bounds.height}" fill="#42574a"/>
-    <g fill="#85937b" pointer-events="none">${area.walls.map(w => `<rect x="${w.x}" y="${w.y}" width="${w.width}" height="${w.height}"/>`).join('')}</g>
-    <g fill="#6d7f6a" pointer-events="none">${area.furniture.map(f => `<rect x="${f.x}" y="${f.y}" width="${f.width}" height="${f.height}" rx="4"/>`).join('')}</g>
-    ${area.exits.map(e => `<rect x="${e.rect.x}" y="${e.rect.y}" width="${e.rect.width}" height="${e.rect.height}" fill="#e6c984"/>`).join('')}
-    <rect id="map-viewport" class="map-viewport" x="0" y="0" width="${area.width}" height="${area.height}"/>
-    <g id="map-players" pointer-events="none"></g>`;
-}
 
 // Room buttons only exist in the corridor markup, and a full-SVG rebuild throws them away —
 // this re-attaches the keyboard handler every time the corridor plan is (re)painted. Pointer
@@ -62,6 +41,10 @@ function renderMinimap(area: Area, scene: OfficeScene) {
 export function bindMapPanel(scene: OfficeScene, network: Network) {
   // Tracks which plan is currently painted so a rebuild only happens on an actual area change —
   // the snapshot arrives ~15/s and re-painting the SVG every tick would flicker for nothing.
+  // Driven by the scene's own 'area' event (see game.ts), not by the snapshot's player.area:
+  // the snapshot flips the instant the server moves you, but the camera's cut is deliberately
+  // delayed behind the fade curtain, so the two disagree for up to ~260ms on every transition.
+  // The minimap must track what the camera is actually showing, not what the server just decided.
   let shownArea: AreaId = 'corridor';
   const showArea = (area: Area) => { if (area.id === shownArea) return; shownArea = area.id; renderMinimap(area, scene); };
   renderMinimap(AREAS[shownArea], scene); // paint the corridor plan before the first snapshot lands
@@ -101,14 +84,19 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
     if (!minimap.hasPointerCapture(event.pointerId)) return;
     const { x, y } = worldAt(event); scene.lookAt(x, y);
   };
+  // Fired by the scene the instant it actually cuts to a new area (see game.ts) — the single
+  // source of truth for what the camera is showing right now.
+  network.addEventListener('area', event => showArea(AREAS[(event as CustomEvent<AreaId>).detail]));
   network.addEventListener('camera', event => {
     const view = (event as CustomEvent<CameraView>).detail;
     get('zoom-level').textContent = `${Math.round(view.zoom * 100)}%`;
     get('locate-player').setAttribute('aria-pressed', String(view.following));
     (get('zoom-out') as HTMLButtonElement).disabled = view.zoom <= 1.001;
     (get('zoom-in') as HTMLButtonElement).disabled = view.atMax;
-    // view is already expressed in the currently-drawn area's coordinate space (OfficeCamera
-    // tracks the same area the scene just cut to), so no projection is needed here.
+    // view is expressed in whatever area the camera itself is currently configured for. Because
+    // shownArea now only ever changes on the scene's own 'area' event (fired at the same instant
+    // officeCamera.configure() runs), the two are updated atomically — there is no frame where
+    // this clamps view against the wrong area's dimensions.
     const area = AREAS[shownArea];
     const x = Math.max(0, view.x), y = Math.max(0, view.y);
     const viewport = get('map-viewport');
@@ -119,18 +107,9 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
     get('map-panel').hidden = !office; get('camera-toolbar').hidden = !office;
     document.querySelector('.stage')!.classList.toggle('is-dungeon', !office);
     const player = snapshot?.players.find(p => p.id === network.profile?.id);
-    if (office && player) showArea(AREAS[player.area]);
     const area = AREAS[shownArea];
-    const dot = (p: Actor, pos: { x: number; y: number }) => `<circle cx="${pos.x}" cy="${pos.y}" r="${p.id === player?.id ? 30 : 22}" fill="${p.id === player?.id ? '#c0f3c8' : '#e4c88d'}" stroke="#172b24" stroke-width="12"/>`;
-    // Corridor view: the whole floor's population, each projected onto their own area's footprint
-    // (identity for corridor players) so the overview stays informative about who is where.
-    // Room view: only that room's own occupants, drawn at their raw local coordinates — projecting
-    // everyone else's numbers onto this one room's plan would be meaningless, and drawing the whole
-    // floor's dots on a single room's footprint would misrepresent who's actually in the room.
-    const dots = area.id === 'corridor'
-      ? (snapshot?.players ?? []).map(p => dot(p, projectTo(AREAS[p.area], p.x, p.y)))
-      : (snapshot?.players ?? []).filter(p => p.area === area.id).map(p => dot(p, p));
-    get('map-players').innerHTML = office ? dots.join('') : '';
+    const dot = (d: MinimapDot) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.self ? '#c0f3c8' : '#e4c88d'}" stroke="#172b24" stroke-width="12"/>`;
+    get('map-players').innerHTML = office ? minimapDots(area, snapshot?.players ?? [], player?.id).map(dot).join('') : '';
     const room = player && player.area === 'corridor' ? roomAt(player.x, player.y) : undefined;
     document.querySelectorAll<SVGElement>('[data-map-room]').forEach(button => {
       const active = button.dataset.mapRoom === room?.id;

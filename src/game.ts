@@ -90,6 +90,11 @@ export class OfficeScene extends Phaser.Scene {
       this.floorPlan = office ? drawArea(this, AREAS[this.currentArea]) : undefined;
       this.background.setVisible(!office);
       this.officeCamera.configure(office ? AREAS[this.currentArea] : null);
+      // The minimap must switch in lockstep with the camera, not with the snapshot: the snapshot's
+      // player.area flips the instant the server moves you, but this cut (and the camera's own area)
+      // is deliberately delayed behind the fade curtain. Emitting here — exactly when the camera
+      // actually re-configures — is the one moment the two are guaranteed to agree.
+      if (office) this.network.emit('area', this.currentArea);
       for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
       this.visuals.clear(); this.resetInput();
       // Only a curtain we actually darkened needs clearing back — a bare authority hard cut stays
