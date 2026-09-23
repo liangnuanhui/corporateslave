@@ -73,4 +73,9 @@ test('every furniture item gets a render height, and none is tall enough to swal
   // a silent edit to the table is then caught whichever way it moves.
   const lifts = Object.fromEntries([...corridor.furniture, ...meeting.furniture, ...storage.furniture].map(f => [f.kind, f.lift]));
   assert.deepEqual(lifts, { desk: 22, table: MAX_LIFT, shelf: MAX_LIFT, counter: MAX_LIFT, sofa: MAX_LIFT, plant: MAX_LIFT });
+  // MAX_LIFT moved three times (62 → 32 → 26) before landing here, each time because it was set
+  // too high; the assertions above only check MAX_LIFT against itself, so they stay green no
+  // matter what it's raised to. Pin it against a literal so raising it is a deliberate edit that
+  // meets this history, not a free rebuild of every expectation from the same constant.
+  assert.ok(MAX_LIFT <= 26, `MAX_LIFT=${MAX_LIFT} 会把北侧的人压到只剩 ${(HEAD_TOP - MAX_LIFT).toFixed(1)}px 的头，太矮了`);
 });
