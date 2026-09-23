@@ -27,11 +27,19 @@ for (const room of [meeting, storage]) {
 
 export const AREAS: Record<AreaId, Area> = { corridor, meeting, storage };
 
-/** Render heights live here so the three area files stay pure footprints.
- *  The rule, not the numbers: a character standing due north of a solid is stopped one radius
- *  away, at `y - 14`, and the top of their head sits 18.9px above that, so the band of them
- *  still visible over the solid is `32.9 - lift` pixels. At 33 and up they vanish completely. */
-const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: 26, shelf: 26, counter: 26, sofa: 30, plant: 26 };
+/** How far above their own centre a character's head reaches: their 36px texture is drawn 40px
+ *  tall (x1.111) and its first opaque row is texture y=1, so 20 - 1.111 = 18.9, and a character
+ *  stopped one radius (14) north of a solid tops out 32.9px above that solid's edge. */
+export const HEAD_TOP = 32.9;
+/** A character standing due north of a solid shows `HEAD_TOP - lift` pixels of head, so no solid
+ *  may lift more than this without erasing them — past 33 they vanish outright. Restoring taller
+ *  furniture needs the solid to fade or outline when it occludes the local player: a feature,
+ *  not a constant. Raise this only along with that feature. */
+export const MAX_LIFT = 26;
+
+/** Render heights live here so the three area files stay pure footprints. Nothing exceeds the
+ *  cap; a desk is the only thing low enough to sit under it. */
+const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: MAX_LIFT, shelf: MAX_LIFT, counter: MAX_LIFT, sofa: MAX_LIFT, plant: MAX_LIFT };
 for (const area of Object.values(AREAS)) for (const item of area.furniture) item.lift ??= LIFT[item.kind];
 
 export function exitAt(area: Area, x: number, y: number): Exit | undefined {
