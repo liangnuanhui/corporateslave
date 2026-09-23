@@ -59,18 +59,20 @@ test('leaving a room lands back in the corridor outside the trigger', () => {
 });
 
 test('every furniture item gets a render height, and none is tall enough to swallow a character', () => {
-  // A character standing north of a solid is closest at `y - radius`; their sprite spans
-  // 20px either side of that, so the head sits at `y - 34`. The top face starts at `y - lift`.
-  const HEAD = 34;
+  // A character standing due north of a solid is stopped one radius away, at `y - 14`. Their
+  // avatar's topmost opaque pixel is 18.9px above that: the 36px-tall texture is drawn 40px
+  // tall (x1.111) and its first opaque row is texture y=1. So the head tops out at `y - 32.9`
+  // and the band still visible over the solid is `32.9 - lift` pixels.
+  const HEAD_TOP = 32.9;
   for (const area of Object.values(AREAS)) {
     for (const item of area.furniture) {
       assert.equal(typeof item.lift, 'number', `${area.id} 的 ${item.kind} 没有 lift`);
-      assert.ok(item.lift! < HEAD, `${area.id} 的 ${item.kind} lift=${item.lift}，会把北侧的人整个盖住`);
+      const visible = HEAD_TOP - item.lift!;
+      assert.ok(visible > 0, `${area.id} 的 ${item.kind} lift=${item.lift}，会把北侧的人整个盖住`);
     }
   }
-  // Pin concrete values so a silent table edit is caught.
-  assert.equal(storage.furniture.find(f => f.kind === 'shelf')!.lift, 32);
-  assert.equal(storage.furniture.find(f => f.kind === 'counter')!.lift, 32);
-  assert.equal(meeting.furniture.find(f => f.kind === 'table')!.lift, 26);
-  assert.equal(corridor.furniture.find(f => f.kind === 'desk')!.lift, 22);
+  // How legible `visible` has to be is a judgement call, so pin every value instead: a silent
+  // edit to the table is then caught whichever way it moves.
+  const lifts = Object.fromEntries([...corridor.furniture, ...meeting.furniture, ...storage.furniture].map(f => [f.kind, f.lift]));
+  assert.deepEqual(lifts, { desk: 22, table: 26, shelf: 26, counter: 26, sofa: 30, plant: 26 });
 });
