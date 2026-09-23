@@ -1,19 +1,26 @@
 import Phaser from 'phaser';
 import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
+import { OFFICE, OFFICE_ROOMS } from '../shared/office';
+import { drawOffice, createOfficeAvatar } from './office-map';
+import { OfficeCamera } from './office-camera';
 
 interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse }
 export class OfficeScene extends Phaser.Scene {
   private visuals = new Map<string, Visual>();
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private background!: Phaser.GameObjects.Image;
+  private floorPlan!: Phaser.GameObjects.Container;
+  private officeCamera!: OfficeCamera;
+  private officeMode = true;
+  private cameraElapsed = 0;
   private seq = 0;
   private inputElapsed = 0;
   private isReady = false;
   private activeRoom = '';
   private jumpQueued = false;
   private lastJump = false;
-  private touch = { left: false, right: false, jump: false, attack: false };
+  private touch = { left: false, right: false, up: false, down: false, jump: false, attack: false };
   private preview?: Phaser.GameObjects.Sprite;
   private offline!: Phaser.GameObjects.Text;
   constructor(private network: Network, private blocked: () => boolean, private interact: () => void) { super('office'); }
@@ -31,12 +38,16 @@ export class OfficeScene extends Phaser.Scene {
     ];
     rects.forEach(([x,y,w,h], i) => this.textures.get('atlas').add(i, 0, x,y,w,h));
     this.background = this.add.image(0, 0, 'office').setOrigin(0).setDisplaySize(WORLD.width, WORLD.height);
-    this.add.rectangle(0, 0, WORLD.width, 110, 0x101820, 0.15).setOrigin(0);
-    this.preview = this.add.sprite(420, WORLD.floor, 'atlas', 0).setOrigin(0.5, 1).setDisplaySize(85, 100);
-    this.offline = this.add.text(WORLD.width / 2, WORLD.height - 58, '创建角色，开启你的下班冒险', { fontSize: '18px', fontFamily: 'sans-serif', color: '#fff4dd', backgroundColor: '#16202bd9', padding: { x: 20, y: 12 } }).setOrigin(0.5);
-    this.keys = this.input.keyboard!.addKeys('A,D,W,SPACE,J,E,LEFT,RIGHT,UP') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.background.setVisible(false);
+    this.floorPlan = drawOffice(this);
+    createOfficeAvatar(this);
+    this.officeCamera = new OfficeCamera(this, this.blocked);
+    this.officeCamera.configure(true);
+    this.preview = this.add.sprite(OFFICE.spawn.x, OFFICE.spawn.y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(20);
+    this.offline = this.add.text(WORLD.width / 2, WORLD.height - 58, '创建角色，开启你的下班冒险', { fontSize: '16px', fontFamily: 'sans-serif', color: '#fff4dd', backgroundColor: '#16202bd9', padding: { x: 20, y: 12 } }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false);
+    this.keys = this.input.keyboard!.addKeys('A,D,W,S,SPACE,J,E,LEFT,RIGHT,UP,DOWN') as Record<string, Phaser.Input.Keyboard.Key>;
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
-    this.input.keyboard!.removeCapture(['A','D','W','SPACE','J','E','LEFT','RIGHT','UP']);
+    this.input.keyboard!.removeCapture(['A','D','W','S','SPACE','J','E','LEFT','RIGHT','UP','DOWN']);
     this.network.addEventListener('hit', event => { if (this.isReady) this.hit((event as CustomEvent).detail); });
     this.network.addEventListener('snapshot', () => {
       if (this.network.snapshot?.roomId !== this.activeRoom) { this.activeRoom = this.network.snapshot?.roomId || ''; this.seq = 0; }
@@ -44,33 +55,46 @@ export class OfficeScene extends Phaser.Scene {
     window.addEventListener('blur', () => this.resetInput());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.resetInput(); });
     this.isReady = true;
-    this.game.canvas.setAttribute('aria-label', '办公室游戏场景，A D 移动，空格跳跃，J 攻击，E 互动');
+    this.game.canvas.setAttribute('aria-label', '俯瞰办公室，W A S D 移动人物，方向键或鼠标推到边缘移动视角，滚轮以光标为中心缩放，拖拽查看，E 互动');
   }
   touchInput(key: keyof typeof this.touch, value: boolean) { this.touch[key] = value; if (key === 'jump' && value) this.jumpQueued = true; }
   resetInput() {
-    this.input.keyboard?.resetKeys(); this.touch = { left: false, right: false, jump: false, attack: false };
+    this.input.keyboard?.resetKeys(); this.touch = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+    this.jumpQueued = false; this.lastJump = false;
     this.network.input({ ...this.touch, seq: ++this.seq });
   }
   update(time: number, delta: number) {
     if (!this.isReady) return;
     const snap = this.network.snapshot;
     const blocked = this.blocked() || document.hidden || !document.hasFocus();
-    const jump = !blocked && (this.keys.SPACE.isDown || this.keys.W.isDown || this.keys.UP.isDown || this.touch.jump);
+    const office = snap?.zone !== 'dungeon';
+    if (office !== this.officeMode) {
+      this.officeMode = office; this.officeCamera.configure(office);
+      this.floorPlan.setVisible(office); this.background.setVisible(!office);
+      for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
+      this.visuals.clear(); this.resetInput();
+    }
+    const jump = !office && !blocked && (this.keys.SPACE.isDown || this.keys.W.isDown || this.keys.UP.isDown || this.touch.jump);
     if (jump && !this.lastJump) this.jumpQueued = true; this.lastJump = jump;
     this.inputElapsed += Math.min(delta, 100);
     if (this.inputElapsed >= 1000 / 30) {
       this.inputElapsed %= 1000 / 30;
       const input: Input = {
-        left: !blocked && (this.keys.A.isDown || this.keys.LEFT.isDown || this.touch.left),
-        right: !blocked && (this.keys.D.isDown || this.keys.RIGHT.isDown || this.touch.right),
+        left: !blocked && (this.keys.A.isDown || (!office && this.keys.LEFT.isDown) || this.touch.left),
+        right: !blocked && (this.keys.D.isDown || (!office && this.keys.RIGHT.isDown) || this.touch.right),
+        up: office && !blocked && (this.keys.W.isDown || this.touch.up),
+        down: office && !blocked && (this.keys.S.isDown || this.touch.down),
         jump: !blocked && this.jumpQueued, attack: !blocked && (this.keys.J.isDown || this.touch.attack), seq: ++this.seq,
       };
       this.network.input(input); this.jumpQueued = false;
     }
     if (!blocked && Phaser.Input.Keyboard.JustDown(this.keys.E)) this.interact();
-    this.offline.setVisible(!this.network.connected);
+    this.offline.setVisible(!office && !this.network.connected);
     this.offline.setText(this.network.profile ? '连接中断 · 请点击右上角重新连接' : '创建角色，开启你的下班冒险');
     this.preview?.setVisible(!snap);
+    this.officeCamera.update(delta, snap?.players.find(p => p.id === this.network.profile?.id));
+    this.cameraElapsed += delta;
+    if (this.cameraElapsed >= 70) { this.cameraElapsed = 0; this.network.emit('camera', this.officeCamera.view); }
     if (!snap) return;
     this.background.setTint(snap.zone === 'dungeon' ? 0xb2a5d5 : 0xffffff);
     const ids = new Set([...snap.players.map(p=>p.id), ...snap.enemies.map(e=>e.id)]);
@@ -81,12 +105,13 @@ export class OfficeScene extends Phaser.Scene {
   private renderActor(actor: Actor | Enemy, enemy: boolean, time: number, delta: number) {
     let v = this.visuals.get(actor.id);
     const boss = enemy && actor.id === 'overtime';
-    const width = enemy ? boss ? 100 : 77 : 81;
-    const height = enemy ? boss ? 92 : 70 : 96;
+    const office = this.officeMode;
+    const width = office ? 38 : enemy ? boss ? 100 : 77 : 81;
+    const height = office ? 40 : enemy ? boss ? 92 : 70 : 96;
     if (!v) {
       const shadow = this.add.ellipse(actor.x, WORLD.floor - 1, width * .64, 9, 0x10151b, .28);
-      const sprite = this.add.sprite(actor.x, actor.y, 'atlas', enemy ? 8 : 0).setOrigin(.5, 1);
-      const label = this.add.text(actor.x, actor.y - height - 18, '', { fontSize: '15px', fontFamily: 'system-ui, sans-serif', color: '#f5eedc', backgroundColor: '#111820dd', padding: {x: 7, y: 4} }).setOrigin(.5,1);
+      const sprite = this.add.sprite(actor.x, actor.y, office ? 'office-avatar' : 'atlas', office ? undefined : enemy ? 8 : 0).setOrigin(.5, office ? .5 : 1);
+      const label = this.add.text(actor.x, actor.y - height - 18, '', { fontSize: office ? '16px' : '15px', fontFamily: 'system-ui, sans-serif', color: '#f5eedc', backgroundColor: '#111820dd', padding: {x: 7, y: 4} }).setOrigin(.5,1);
       const health = this.add.graphics(); v = { sprite, label, shadow, health }; this.visuals.set(actor.id, v);
     }
     const my = actor.id === this.network.profile?.id;
@@ -96,14 +121,25 @@ export class OfficeScene extends Phaser.Scene {
     let frame = 0;
     if (enemy) frame = actor.hp === 0 ? 11 : actor.action === 'attack' ? 10 : actor.action === 'walk' ? 8 + Math.floor(time / 160) % 2 : 8;
     else frame = actor.hp === 0 || actor.action === 'hurt' ? 5 : actor.action === 'attack' ? 4 : actor.action === 'jump' ? 3 : actor.action === 'walk' ? 1 + Math.floor(time / 120) % 2 : this.network.snapshot?.status === 'complete' ? 6 : 0;
-    v.sprite.setFrame(frame).setDisplaySize(width, height).setFlipX(enemy ? actor.face > 0 : actor.face < 0).setAlpha(actor.hp === 0 ? .4 : 1);
+    if (!office) v.sprite.setFrame(frame);
+    v.sprite.setDisplaySize(width, height).setFlipX(enemy ? actor.face > 0 : actor.face < 0).setAlpha(actor.hp === 0 ? .4 : 1);
     const role = 'role' in actor ? actor.role : '';
     v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
     v.sprite.setDepth(20); v.label.setDepth(30); v.health.setDepth(30);
-    v.label.setText(actor.name + (my ? ' · 你' : '') + (!actor.hp && !enemy ? ' · 休息中' : '')).setPosition(v.sprite.x, v.sprite.y-height-10).setColor(my ? '#a6e8c2' : '#f5eedc');
+    v.label.setText(actor.name + (my ? ' · 你' : '') + (!actor.hp && !enemy ? ' · 休息中' : '')).setPosition(v.sprite.x, v.sprite.y - (office ? 26 : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
     v.health.clear();
     if (enemy && actor.hp > 0) { v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32,v.sprite.y-height-9,64,5); v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32,v.sprite.y-height-9,64*actor.hp/(actor as Enemy).maxHp,5); }
-    v.shadow.setPosition(v.sprite.x,WORLD.floor).setVisible(actor.hp > 0);
+    v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
+  }
+  zoomBy(factor: number) { this.officeCamera?.zoomBy(factor); }
+  overview() { this.officeCamera?.overview(); }
+  focusRoom(id: string) { const room = OFFICE_ROOMS.find(r => r.id === id); if (room) this.officeCamera?.focus(room.x + room.width / 2, room.y + room.height / 2); }
+  lookAt(x: number, y: number) { this.officeCamera?.look(x, y); }
+  locatePlayer() {
+    if (this.officeCamera?.following) { this.officeCamera.following = false; return; }
+    const actor = this.network.snapshot?.players.find(p => p.id === this.network.profile?.id);
+    if (actor) this.officeCamera?.focus(actor.x, actor.y, true);
+    else this.network.emit('notice', '创建角色后，即可定位并跟随人物');
   }
   private hit(data: { x: number; y: number; damage: number; id: string }) {
     const text = this.add.text(data.x,data.y, `−${data.damage}`, {fontSize:'24px',fontStyle:'bold',fontFamily:'monospace',color:data.id===this.network.profile?.id?'#ff9a8d':'#f8e1a1',stroke:'#161a22',strokeThickness:4}).setDepth(50);
@@ -115,7 +151,8 @@ export function createGame(network: Network, blocked: () => boolean, interact: (
   const scene = new OfficeScene(network, blocked, interact);
   const game = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', width: WORLD.width, height: WORLD.height,
     backgroundColor:'#1a212b', pixelArt: true, roundPixels: true,
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    input: { mouse: { preventDefaultWheel: true }, touch: true },
+    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
     scene, audio: { noAudio: true }, banner: false,
   });
   return { game, scene };
