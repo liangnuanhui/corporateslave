@@ -40,6 +40,7 @@ export class Network extends EventTarget {
       room.onMessage('snapshot', (snapshot: Snapshot) => { if (this.room !== room) return; this.snapshot = snapshot; this.emit('snapshot'); });
       room.onMessage('profile', (profile: Profile) => { this.profile = profile; this.emit('profile'); });
       room.onMessage('notice', (message: string) => this.emit('notice', message));
+      room.onMessage('transition', data => this.emit('transition', data));
       room.onMessage('hit', data => this.emit('hit', data));
       room.onMessage('complete', data => this.emit('complete', data));
       room.onMessage('reward', data => this.emit('reward', data));

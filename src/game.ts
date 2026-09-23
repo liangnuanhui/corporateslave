@@ -14,6 +14,10 @@ export class OfficeScene extends Phaser.Scene {
   private officeCamera!: OfficeCamera;
   private officeMode = true;
   private currentArea: AreaId = 'corridor';
+  /** Set while a door's `transition` message is in flight, so the authority rule in update() holds
+   *  the hard cut until the curtain camera-fade is actually dark instead of cutting through it. */
+  private transitionPending = false;
+  private transitionDeadline = 0;
   private cameraElapsed = 0;
   private seq = 0;
   private inputElapsed = 0;
@@ -50,6 +54,7 @@ export class OfficeScene extends Phaser.Scene {
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
     this.input.keyboard!.removeCapture(['A','D','W','S','SPACE','J','E','LEFT','RIGHT','UP','DOWN']);
     this.network.addEventListener('hit', event => { if (this.isReady) this.hit((event as CustomEvent).detail); });
+    this.network.addEventListener('transition', event => this.playTransition((event as CustomEvent).detail.name));
     this.network.addEventListener('snapshot', () => {
       if (this.network.snapshot?.roomId !== this.activeRoom) { this.activeRoom = this.network.snapshot?.roomId || ''; this.seq = 0; }
     });
@@ -70,8 +75,15 @@ export class OfficeScene extends Phaser.Scene {
     const blocked = this.blocked() || document.hidden || !document.hasFocus();
     const office = snap?.zone !== 'dungeon';
     const area = office ? (snap?.players.find(p => p.id === this.network.profile?.id)?.area ?? this.currentArea) : null;
-    // The snapshot is the authority: the moment the drawn area disagrees with it, cut to the new one.
-    if (office !== this.officeMode || (area && area !== this.currentArea)) {
+    // A pending transition's curtain fade can outlast its wait (tab backgrounded, tween frozen) —
+    // this bound clears it on its own so the screen is never stuck black with nothing to trigger it.
+    if (this.transitionPending && time >= this.transitionDeadline) { this.transitionPending = false; this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16); }
+    // The snapshot is the authority: the moment the drawn area disagrees with it, cut to the new one —
+    // immediately if no transition is pending (reconnect, a missed message), otherwise once the
+    // curtain is actually dark, so the cut never shows through a half-transparent fade.
+    const mismatched = office !== this.officeMode || (area && area !== this.currentArea);
+    if (mismatched && (!this.transitionPending || this.cameras.main.fadeEffect.progress >= .999)) {
+      const pending = this.transitionPending; this.transitionPending = false;
       this.officeMode = office; this.currentArea = area ?? this.currentArea;
       this.floorPlan?.destroy();
       this.floorPlan = office ? drawArea(this, AREAS[this.currentArea]) : undefined;
@@ -79,6 +91,9 @@ export class OfficeScene extends Phaser.Scene {
       this.officeCamera.configure(office ? AREAS[this.currentArea] : null);
       for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
       this.visuals.clear(); this.resetInput();
+      // Only a curtain we actually darkened needs clearing back — a bare authority hard cut stays
+      // an instant cut, exactly as it was before this feature existed.
+      if (pending) this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16);
     }
     const jump = !office && !blocked && (this.keys.SPACE.isDown || this.keys.W.isDown || this.keys.UP.isDown || this.touch.jump);
     if (jump && !this.lastJump) this.jumpQueued = true; this.lastJump = jump;
@@ -150,6 +165,14 @@ export class OfficeScene extends Phaser.Scene {
     const actor = this.network.snapshot?.players.find(p => p.id === this.network.profile?.id);
     if (actor) this.officeCamera?.focus(actor.x, actor.y, true);
     else this.network.emit('notice', '创建角色后，即可定位并跟随人物');
+  }
+  /** Presentation only — the server already moved us; update()'s authority rule does the actual
+   *  rebuild. This just earns it a dark screen to cut behind, and announces the room once it's dark. */
+  private playTransition(name: string) {
+    this.transitionPending = true;
+    this.transitionDeadline = this.time.now + 260; // bounds the wait if the fade never completes
+    this.cameras.main.fadeOut(180, 0x0b, 0x11, 0x16);
+    this.network.emit('notice', `进入${name}`);
   }
   private hit(data: { x: number; y: number; damage: number; id: string }) {
     const text = this.add.text(data.x,data.y, `−${data.damage}`, {fontSize:'24px',fontStyle:'bold',fontFamily:'monospace',color:data.id===this.network.profile?.id?'#ff9a8d':'#f8e1a1',stroke:'#161a22',strokeThickness:4}).setDepth(50);
