@@ -54,18 +54,26 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       await pause(100);
     };
     // Room interiors are now sealed area footprints (see shared/world/corridor.ts) rather than
-    // open corridor floor, so this no longer walks players INTO each room — it confirms the
-    // server keeps them out, synced to the second player, which the pure-function suite can't
-    // exercise over the wire.
+    // open corridor floor, so this no longer walks players INTO each room. It asserts both
+    // halves of the new behavior: the doorway is still reachable (this fails if the
+    // ROOM_INTERIORS clearance regresses to WALL_SIZE — see the CLEARANCE comment in
+    // corridor.ts, the player then halts short of the threshold) and entry is blocked, with a
+    // discriminating cross-client sync check so a frozen/broken sync path can't pass silently.
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room), fromAbove = room.door === 'top';
       await walkTo('x', door.x);
       await walkTo('y', door.y + (fromAbove ? -60 : 60));
-      for (let i = 0; i < 15; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
+      for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
       await until(() => {
         const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
-        return roomAt(myself().x, myself().y) === undefined && roomAt(observer.x, observer.y) === undefined;
+        return Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40;
       });
+      const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
+      // Measured empirically: halts ~1.7px from door.y with CLEARANCE=14, ~5.6px with the
+      // brief's original WALL_SIZE=12 — tolerance 4 sits cleanly between the two.
+      assert.ok(Math.abs(myself().y - door.y) < 4, `${room.name} 应该能走到门口 (y=${myself().y.toFixed(2)}, door.y=${door.y})`);
+      assert.equal(roomAt(myself().x, myself().y), undefined, `${room.name} 不应该被走进去`);
+      assert.ok(Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40, `${room.name} 观察者同步的位置偏差过大`);
       await walkTo('y', corridor.spawnPoints[0].y);
       assert.equal(roomAt(myself().x, myself().y), undefined);
     }
