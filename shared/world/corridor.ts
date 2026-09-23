@@ -1,4 +1,4 @@
-import type { Area, Furniture, Rect } from './types.js';
+import type { Area, AreaId, Exit, Furniture, Rect } from './types.js';
 
 export interface OfficeRoom extends Rect { id: string; name: string; subtitle: string; color: number; door: 'top' | 'bottom' }
 export const CORRIDOR_ROOMS: OfficeRoom[] = [
@@ -50,12 +50,33 @@ export const CORRIDOR_FURNITURE: Furniture[] = CORRIDOR_ROOMS.flatMap(room => {
 export function roomAt(x: number, y: number): OfficeRoom | undefined {
   return CORRIDOR_ROOMS.find(room => x > room.x && x < room.x + room.width && y > room.y && y < room.y + room.height);
 }
+/** Room interiors live in their own areas now, so the corridor footprint is unreachable.
+ *  The four walls already seal it; this is a guard against the door gap (only WALL_SIZE
+ *  deep, not the wider CLEARANCE below) letting a player's disc nose into the old floor. */
+const CLEARANCE = 14;   // matches corridor.radius — a disc this size must clear the interior everywhere the door gap has no wall
+const ROOM_INTERIORS: Rect[] = CORRIDOR_ROOMS.map(room => ({
+  x: room.x + CLEARANCE, y: room.y + CLEARANCE,
+  width: room.width - CLEARANCE * 2, height: room.height - CLEARANCE * 2,
+}));
+const OPEN: Record<string, AreaId> = { meeting: 'meeting', storage: 'storage' };
+export const CORRIDOR_EXITS: Exit[] = CORRIDOR_ROOMS.map(room => {
+  const door = doorway(room), open = OPEN[room.id];
+  // Trigger sits on the corridor side of the wall line, where the player is stopped.
+  const y = room.door === 'top' ? door.y - 26 : door.y;
+  return {
+    rect: { x: door.x - 40, y, width: 80, height: 26 },
+    to: (open ?? 'corridor') as AreaId,
+    at: { x: 0, y: 0 },          // index.ts 回填
+    label: room.name,
+    locked: open ? undefined : true,
+  };
+});
 export const corridor: Area = {
   id: 'corridor', name: '公共走廊', width: 1920, height: 1200,
   bounds: { x: 48, y: 64, width: 1824, height: 1072 },
   radius: 14, speed: 235,
   spawnPoints: [{ x: 260, y: 600 }, { x: 420, y: 600 }, { x: 1560, y: 600 }],
   walls: CORRIDOR_WALLS, furniture: CORRIDOR_FURNITURE,
-  obstacles: [...CORRIDOR_WALLS, ...CORRIDOR_FURNITURE],
-  exits: [],   // Task 2 填充
+  obstacles: [...CORRIDOR_WALLS, ...CORRIDOR_FURNITURE, ...ROOM_INTERIORS],
+  exits: CORRIDOR_EXITS,
 };

@@ -53,13 +53,18 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       }, 10000);
       await pause(100);
     };
+    // Room interiors are now sealed area footprints (see shared/world/corridor.ts) rather than
+    // open corridor floor, so this no longer walks players INTO each room — it confirms the
+    // server keeps them out, synced to the second player, which the pure-function suite can't
+    // exercise over the wire.
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
-      const door = doorway(room);
+      const door = doorway(room), fromAbove = room.door === 'top';
       await walkTo('x', door.x);
-      await walkTo('y', door.y + (room.door === 'top' ? 48 : -48));
+      await walkTo('y', door.y + (fromAbove ? -60 : 60));
+      for (let i = 0; i < 15; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
       await until(() => {
         const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
-        return roomAt(myself().x, myself().y)?.id === room.id && roomAt(observer.x, observer.y)?.id === room.id;
+        return roomAt(myself().x, myself().y) === undefined && roomAt(observer.x, observer.y) === undefined;
       });
       await walkTo('y', corridor.spawnPoints[0].y);
       assert.equal(roomAt(myself().x, myself().y), undefined);

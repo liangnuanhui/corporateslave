@@ -1,8 +1,7 @@
 /** One area is a self-contained walkable space with its own coordinate system. */
 export interface Rect { x: number; y: number; width: number; height: number }
 export interface Furniture extends Rect { kind: 'desk' | 'table' | 'shelf' | 'counter' | 'sofa' | 'plant' }
-/** Widened to 'corridor' | 'meeting' | 'storage' when the room areas land. */
-export type AreaId = 'corridor';
+export type AreaId = 'corridor' | 'meeting' | 'storage';
 export interface Exit {
   rect: Rect;                      // 触发器，玩家中心落入即触发
   to: AreaId;

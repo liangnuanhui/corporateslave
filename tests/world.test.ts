@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { corridor, CORRIDOR_ROOMS, CORRIDOR_FURNITURE, canStandAt, doorway, moveIn, roomAt } from '../shared/world/index.js';
+import { corridor, CORRIDOR_ROOMS, CORRIDOR_FURNITURE, canStandAt, doorway, moveIn, roomAt, AREAS, exitAt, projectTo, meeting, storage } from '../shared/world/index.js';
 import { idleInput } from '../shared/game.js';
 
 const spawn = corridor.spawnPoints[0];
@@ -17,16 +17,23 @@ test('corridor movement supports both axes and normalizes diagonal speed', () =>
   assert.ok(Math.abs(straight.y - start.y) < .0001);
 });
 
-test('all six rooms can be entered and exited through their doors', () => {
+test('two rooms open through their doorway, four report 装修中', () => {
   for (const room of CORRIDOR_ROOMS) {
     const door = doorway(room), fromAbove = room.door === 'top';
     const p = actor(door.x, door.y + (fromAbove ? -48 : 48));
-    assert.ok(canStandAt(corridor, p.x, p.y));
-    assert.equal(roomAt(p.x, p.y), undefined);
-    for (let i = 0; i < 12; i++) moveIn(corridor, p, { ...idleInput(), up: !fromAbove, down: fromAbove });
-    assert.equal(roomAt(p.x, p.y)?.id, room.id, `enter ${room.name}`);
-    for (let i = 0; i < 12; i++) moveIn(corridor, p, { ...idleInput(), up: fromAbove, down: !fromAbove });
-    assert.equal(roomAt(p.x, p.y), undefined, `exit ${room.name}`);
+    assert.ok(canStandAt(corridor, p.x, p.y), room.name);
+    let hit;
+    for (let i = 0; i < 12 && !hit; i++) {
+      moveIn(corridor, p, { ...idleInput(), up: !fromAbove, down: fromAbove });
+      hit = exitAt(corridor, p.x, p.y);
+    }
+    assert.ok(hit, `${room.name} 的门口应该有触发器`);
+    if (room.id === 'meeting' || room.id === 'storage') {
+      assert.equal(hit!.locked, undefined, `${room.name} 应该开放`);
+      assert.equal(hit!.to, room.id);
+    } else {
+      assert.equal(hit!.locked, true, `${room.name} 应该封闭`);
+    }
   }
 });
 
@@ -55,4 +62,43 @@ test('corridor perimeter blocks escape and idle input does not apply gravity', (
   for (let i = 0; i < 300; i++) moveIn(corridor, p, { ...idleInput(), right: true });
   assert.ok(p.x <= corridor.bounds.x + corridor.bounds.width - corridor.radius);
   moveIn(corridor, p, idleInput()); assert.equal(p.y, 600); assert.equal(p.vy, 0);
+});
+
+test('area registry is self-consistent', () => {
+  for (const area of Object.values(AREAS)) {
+    for (const exit of area.exits) {
+      if (exit.locked) continue;
+      const target = AREAS[exit.to];
+      assert.ok(target, `${area.id} 的出口指向不存在的 ${exit.to}`);
+      assert.ok(canStandAt(target, exit.at.x, exit.at.y), `${area.id} → ${exit.to} 的落点不可站立`);
+      // The landing spot must not sit inside the opposite trigger, or the player bounces back.
+      assert.equal(exitAt(target, exit.at.x, exit.at.y), undefined, `${area.id} → ${exit.to} 的落点落在反向触发器里`);
+    }
+    assert.ok(area.spawnPoints.length > 0, `${area.id} 没有出生点`);
+    for (const s of area.spawnPoints) assert.ok(canStandAt(area, s.x, s.y), `${area.id} 的出生点 ${s.x},${s.y} 不可站立`);
+  }
+});
+
+test('room positions project inside their corridor footprint', () => {
+  for (const room of [meeting, storage]) {
+    const slot = CORRIDOR_ROOMS.find(r => r.id === room.id)!;
+    for (const [x, y] of [[0, 0], [room.width, room.height], [room.width / 2, room.height / 2], [-50, -50], [room.width + 99, room.height + 99]]) {
+      const p = projectTo(room, x, y);
+      assert.ok(p.x >= slot.x && p.x <= slot.x + slot.width, `${room.id} x 越界: ${p.x}`);
+      assert.ok(p.y >= slot.y && p.y <= slot.y + slot.height, `${room.id} y 越界: ${p.y}`);
+    }
+    assert.deepEqual(projectTo(corridor, 500, 500), { x: 500, y: 500 });
+  }
+});
+
+test('rooms are walkable from their spawn to their exit', () => {
+  for (const room of [meeting, storage]) {
+    const p = { ...room.spawnPoints[0], face: 1, vy: 0 };
+    const target = room.exits[0].rect;
+    const goalY = target.y + target.height / 2;
+    for (let i = 0; i < 200 && !exitAt(room, p.x, p.y); i++) {
+      moveIn(room, p, { ...idleInput(), left: p.x > room.width / 2 + 4, right: p.x < room.width / 2 - 4, up: p.y > goalY, down: p.y < goalY });
+    }
+    assert.ok(exitAt(room, p.x, p.y), `${room.name} 从出生点走不到门口`);
+  }
 });
