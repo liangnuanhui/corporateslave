@@ -4,6 +4,7 @@ import { Network } from './network';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
 import { drawArea, createOfficeAvatar } from './render/area-renderer';
 import { OfficeCamera } from './office-camera';
+import { TRANSITION_TIMEOUT_MS, gateTransition, shouldStartFadeOut } from './office-transition';
 
 interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse }
 export class OfficeScene extends Phaser.Scene {
@@ -75,14 +76,14 @@ export class OfficeScene extends Phaser.Scene {
     const blocked = this.blocked() || document.hidden || !document.hasFocus();
     const office = snap?.zone !== 'dungeon';
     const area = office ? (snap?.players.find(p => p.id === this.network.profile?.id)?.area ?? this.currentArea) : null;
-    // A pending transition's curtain fade can outlast its wait (tab backgrounded, tween frozen) —
-    // this bound clears it on its own so the screen is never stuck black with nothing to trigger it.
-    if (this.transitionPending && time >= this.transitionDeadline) { this.transitionPending = false; this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16); }
     // The snapshot is the authority: the moment the drawn area disagrees with it, cut to the new one —
     // immediately if no transition is pending (reconnect, a missed message), otherwise once the
-    // curtain is actually dark, so the cut never shows through a half-transparent fade.
-    const mismatched = office !== this.officeMode || (area && area !== this.currentArea);
-    if (mismatched && (!this.transitionPending || this.cameras.main.fadeEffect.progress >= .999)) {
+    // curtain is actually dark, so the cut never shows through a half-transparent fade. gateTransition
+    // is the pure, unit-tested state machine behind this decision — see office-transition.ts.
+    const mismatched = Boolean(office !== this.officeMode || (area && area !== this.currentArea));
+    const action = gateTransition(mismatched, this.transitionPending, this.cameras.main.fadeEffect.progress, time, this.transitionDeadline);
+    if (action === 'clear') { this.transitionPending = false; this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16); }
+    else if (action === 'cut') {
       const pending = this.transitionPending; this.transitionPending = false;
       this.officeMode = office; this.currentArea = area ?? this.currentArea;
       this.floorPlan?.destroy();
@@ -169,9 +170,11 @@ export class OfficeScene extends Phaser.Scene {
   /** Presentation only — the server already moved us; update()'s authority rule does the actual
    *  rebuild. This just earns it a dark screen to cut behind, and announces the room once it's dark. */
   private playTransition(name: string) {
+    // A second `transition` while one is already pending (quick in-and-out through a door) must not
+    // restart the fade — Fade.start() would reset it to transparent and flash the stale scene.
+    if (shouldStartFadeOut(this.transitionPending)) this.cameras.main.fadeOut(180, 0x0b, 0x11, 0x16);
     this.transitionPending = true;
-    this.transitionDeadline = this.time.now + 260; // bounds the wait if the fade never completes
-    this.cameras.main.fadeOut(180, 0x0b, 0x11, 0x16);
+    this.transitionDeadline = this.time.now + TRANSITION_TIMEOUT_MS;
     this.network.emit('notice', `进入${name}`);
   }
   private hit(data: { x: number; y: number; damage: number; id: string }) {
