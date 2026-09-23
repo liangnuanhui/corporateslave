@@ -1,6 +1,7 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
+import { OFFICE, moveOffice } from '../shared/office.js';
 import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
@@ -34,7 +35,7 @@ export class WorldRoom extends Room {
     this.onMessage('input', (client, data) => {
       const p = this.players.get(client.sessionId);
       if (!p || !data || !Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq <= p.input.seq) return;
-      p.input = { left: data.left === true, right: data.right === true, jump: data.jump === true, attack: data.attack === true, seq: data.seq };
+      p.input = { left: data.left === true, right: data.right === true, up: data.up === true, down: data.down === true, jump: data.jump === true, attack: data.attack === true, seq: data.seq };
       p.lastInput = this.elapsed;
     });
     this.onMessage('ping', (client, time) => { if (typeof time === 'number') client.send('pong', time); });
@@ -57,7 +58,7 @@ export class WorldRoom extends Room {
     activeAccounts.set(profile.id, client.sessionId);
     this.players.set(client.sessionId, {
       id: profile.id, name: profile.name, role: profile.role, profile,
-      x: 160 + this.players.size * 45, y: WORLD.floor, vy: 0, face: 1, hp: 100,
+      x: (this.zone === 'office' ? OFFICE.spawn.x : 160) + this.players.size * 45, y: this.zone === 'office' ? OFFICE.spawn.y : WORLD.floor, vy: 0, face: 1, hp: 100,
       weapon: profile.weapon, action: 'idle', ack: 0, input: idleInput(), lastInput: 0,
       attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false,
     });
@@ -90,11 +91,12 @@ export class WorldRoom extends Room {
         else continue;
       }
       const input = this.elapsed - p.lastInput > 350 || p.dropped ? idleInput() : p.input;
-      move(p, input); p.ack = p.input.seq;
+      if (this.zone === 'office') moveOffice(p, input); else move(p, input);
+      p.ack = p.input.seq;
       // Jump is an edge-triggered command; holding it cannot cause repeated jumps.
       p.input.jump = false;
-      if (this.elapsed > p.actionUntil) p.action = input.left !== input.right ? 'walk' : 'idle';
-      if (p.y < WORLD.floor - 4 && p.action !== 'attack') p.action = 'jump';
+      if (this.elapsed > p.actionUntil) p.action = input.left !== input.right || (this.zone === 'office' && input.up !== input.down) ? 'walk' : 'idle';
+      if (this.zone === 'dungeon' && p.y < WORLD.floor - 4 && p.action !== 'attack') p.action = 'jump';
       if (input.attack && this.elapsed - p.attackAt >= 550) {
         p.attackAt = this.elapsed; p.action = 'attack'; p.actionUntil = this.elapsed + 230;
         if (this.zone === 'dungeon' && this.status === 'playing') {

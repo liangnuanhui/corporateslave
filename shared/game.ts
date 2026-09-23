@@ -13,11 +13,11 @@ export type RoleId = typeof ROLES[number]['id'];
 export type WeaponId = typeof WEAPONS[number]['id'];
 export type Zone = 'office' | 'dungeon';
 export interface Profile { id: string; username: string; name: string; role: RoleId; coins: number; weapon: WeaponId; owned: WeaponId[]; clears: number }
-export interface Input { left: boolean; right: boolean; jump: boolean; attack: boolean; seq: number }
+export interface Input { left: boolean; right: boolean; up: boolean; down: boolean; jump: boolean; attack: boolean; seq: number }
 export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number }
 export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string }
 export interface Snapshot { roomId: string; zone: Zone; tick: number; players: Actor[]; enemies: Enemy[]; status: 'playing' | 'complete'; wave: number }
-export const idleInput = (): Input => ({ left: false, right: false, jump: false, attack: false, seq: 0 });
+export const idleInput = (): Input => ({ left: false, right: false, up: false, down: false, jump: false, attack: false, seq: 0 });
 export function move(actor: Pick<Actor, 'x' | 'y' | 'vy' | 'face'>, input: Input, dt = WORLD.tick) {
   const direction = Number(input.right) - Number(input.left);
   if (direction) actor.face = direction;

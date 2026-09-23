@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
 import type { Snapshot, Profile } from '../shared/game.js';
+import { OFFICE, OFFICE_ROOMS, doorway, roomAt } from '../shared/office.js';
 
 const base='http://127.0.0.1:2568';
 const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
@@ -41,6 +42,29 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     await until(()=>vb.snap!.players.find(p=>p.id===a.profile.id)!.x>x0+40);
     ra.send('input',{x:99999,hp:99999,seq:15});await pause(90);
     assert.ok(va.snap!.players.find(p=>p.id===a.profile.id)!.x<1280);
+    let officeSeq = 15;
+    const myself = () => va.snap!.players.find(p => p.id === a.profile.id)!;
+    const walkTo = async (axis: 'x' | 'y', target: number) => {
+      await until(async () => {
+        const distance = target - myself()[axis];
+        if (Math.abs(distance) < 16) { ra.send('input', { seq: ++officeSeq }); return true; }
+        ra.send('input', { left: axis === 'x' && distance < 0, right: axis === 'x' && distance > 0, up: axis === 'y' && distance < 0, down: axis === 'y' && distance > 0, seq: ++officeSeq });
+        return false;
+      }, 10000);
+      await pause(100);
+    };
+    for (const room of [...OFFICE_ROOMS].sort((a, b) => a.x - b.x)) {
+      const door = doorway(room);
+      await walkTo('x', door.x);
+      await walkTo('y', door.y + (room.door === 'top' ? 48 : -48));
+      await until(() => {
+        const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
+        return roomAt(myself().x, myself().y)?.id === room.id && roomAt(observer.x, observer.y)?.id === room.id;
+      });
+      await walkTo('y', OFFICE.spawn.y);
+      assert.equal(roomAt(myself().x, myself().y), undefined);
+    }
+    console.log('integration: six rooms entered/exited and synced to second player');
     ra.send('claim');await until(()=>!!va.notice);
     assert.equal((await fetch(base+'/api/me',{headers:{Authorization:`Bearer ${a.token}`}}).then(r=>r.json())).coins,30);
     await ra.leave();
