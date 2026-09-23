@@ -1,7 +1,7 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { AREAS, corridor, moveIn, exitAt, type Area } from '../shared/world/index.js';
+import { AREAS, moveIn, exitAt, type Area } from '../shared/world/index.js';
 import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
@@ -52,14 +52,29 @@ export class WorldRoom extends Room {
     if (!profile) throw new Error('登录已过期，请重新登录');
     return profile;
   }
+  /** New arrivals are scattered across every open area, so the floor never looks like a queue at
+   *  reception. To spawn only inside rooms, clear corridor.spawnPoints — no code change needed. */
+  private pickSpawn() {
+    const candidates = Object.values(AREAS).flatMap(area => area.spawnPoints.map(point => ({ area: area.id, ...point })));
+    const taken = [...this.players.values()];
+    let best = candidates[0], bestScore = -1;
+    for (const c of candidates) {
+      const near = taken.filter(p => p.area === c.area);
+      const score = near.length ? Math.min(...near.map(p => Math.hypot(p.x - c.x, p.y - c.y))) : Infinity;
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
+    return best;
+  }
   onJoin(client: Client, _options: unknown, profile: Profile) {
     if (activeAccounts.has(profile.id)) throw new Error('角色已在另一个窗口上线；断线后请稍等 12 秒');
     if (activeAccounts.size >= 200) throw new Error('当前世界已满，请稍后再试');
     activeAccounts.set(profile.id, client.sessionId);
+    // Dungeon keeps its own fixed spawn (with the old stacking offset) unchanged; only office scatters arrivals.
+    const spawn = this.zone === 'office' ? this.pickSpawn() : { area: 'corridor' as const, x: 160 + this.players.size * 45, y: WORLD.floor };
     this.players.set(client.sessionId, {
       id: profile.id, name: profile.name, role: profile.role, profile,
-      x: (this.zone === 'office' ? corridor.spawnPoints[0].x : 160) + this.players.size * 45, y: this.zone === 'office' ? corridor.spawnPoints[0].y : WORLD.floor, vy: 0, face: 1, hp: 100,
-      weapon: profile.weapon, action: 'idle', ack: 0, area: 'corridor', input: idleInput(), lastInput: 0,
+      x: spawn.x, y: spawn.y, vy: 0, face: 1, hp: 100,
+      weapon: profile.weapon, action: 'idle', ack: 0, area: spawn.area, input: idleInput(), lastInput: 0,
       attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false, exitCooldown: 0, noticeAt: -10000,
     });
     client.send('profile', profile);

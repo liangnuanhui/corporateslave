@@ -79,3 +79,12 @@ test('every furniture item gets a render height, and none is tall enough to swal
   // meets this history, not a free rebuild of every expectation from the same constant.
   assert.ok(MAX_LIFT <= 26, `MAX_LIFT=${MAX_LIFT} 会把北侧的人压到只剩 ${(HEAD_TOP - MAX_LIFT).toFixed(1)}px 的头，太矮了`);
 });
+
+test('every spawn point across open areas is standable and not on a trigger', () => {
+  for (const area of Object.values(AREAS)) {
+    for (const s of area.spawnPoints) {
+      assert.ok(canStandAt(area, s.x, s.y), `${area.id} 出生点不可站立`);
+      assert.equal(exitAt(area, s.x, s.y), undefined, `${area.id} 出生点压在出口触发器上`);
+    }
+  }
+});

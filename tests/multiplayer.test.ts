@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
 import type { Snapshot, Profile } from '../shared/game.js';
-import { corridor, CORRIDOR_ROOMS, doorway, roomAt } from '../shared/world/index.js';
+import { AREAS, corridor, CORRIDOR_ROOMS, doorway, roomAt } from '../shared/world/index.js';
 
 const base='http://127.0.0.1:2568';
 const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
@@ -41,7 +41,10 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     for(let seq=1;seq<15;seq++){ra.send('input',{right:true,seq});await pause(34);}
     await until(()=>vb.snap!.players.find(p=>p.id===a.profile.id)!.x>x0+40);
     ra.send('input',{x:99999,hp:99999,seq:15});await pause(90);
-    assert.ok(va.snap!.players.find(p=>p.id===a.profile.id)!.x<1280);
+    // Random spawn (Task 4) means player A's area here is not necessarily the corridor, so the
+    // bound has to be the current area's own width rather than a corridor-shaped constant.
+    const cheated = va.snap!.players.find(p=>p.id===a.profile.id)!;
+    assert.ok(cheated.x<AREAS[cheated.area].width);
     let officeSeq = 15;
     const myself = () => va.snap!.players.find(p => p.id === a.profile.id)!;
     // Read through a function (not `va.transition` directly) — TS narrows a property right after
@@ -68,6 +71,27 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       assert.equal(observer.area, myself().area, '两个客户端看到的 area 不一致');
       assert.ok(Math.hypot(observer.x - myself().x, observer.y - myself().y) < 40, '两个客户端看到的位置偏差过大');
     };
+    // Random spawn (Task 4) can land player A inside a room, but the door-by-door loop below
+    // navigates in corridor-space coordinates and assumes it starts there. A naive "converge x,
+    // then walk y" doesn't generalise: one of 储物间's own spawn points sits exactly centred
+    // under a shelf, so aiming straight at the door only oscillates in place (verified by
+    // simulation — a single-tick re-decision undoes its own tiny step every other frame). Move
+    // both axes at once, like a real player would, and re-decide the horizontal direction only
+    // every 15 ticks so a step toward the door can't be cancelled out the very next tick — enough
+    // hysteresis to slide around the shelf instead of stalling on its edge.
+    const returnToCorridor = async () => {
+      await until(() => myself().area !== undefined);
+      if (myself().area === 'corridor') return;
+      const area = AREAS[myself().area], midX = area.width / 2, exit = area.exits[0], goalY = exit.rect.y + exit.rect.height / 2;
+      let decision = { left: false, right: false };
+      for (let tick = 0; myself().area !== 'corridor'; tick++) {
+        if (tick >= 300) throw new Error(`${area.name} 走不出去`);
+        if (tick % 15 === 0) decision = { left: myself().x > midX, right: myself().x <= midX };
+        ra.send('input', { ...decision, up: myself().y > goalY, down: myself().y <= goalY, seq: ++officeSeq });
+        await pause(34);
+      }
+    };
+    await returnToCorridor();
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room), fromAbove = room.door === 'top';
       const open = room.id === 'meeting' || room.id === 'storage';
@@ -110,8 +134,8 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     console.log('integration: six rooms entered/exited and synced to second player');
     // spec: 断线 12 秒内重连回到原 area 原位置. Walk into 大会议室, force a drop, reconnect, and
     // confirm the player is still in area 'meeting' at (nearly) the same room-local position —
-    // this has no other coverage (the snapshot-recovery test below only exercises the office
-    // zone's default corridor spawn).
+    // this has no other coverage (the disk-recovery check further below only reads back profile
+    // fields over HTTP and never touches position/area).
     {
       const meetingRoom = CORRIDOR_ROOMS.find(r => r.id === 'meeting')!;
       const meetingDoor = doorway(meetingRoom);
@@ -158,8 +182,9 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     dungeon.send('claim');await until(()=>!!vd.reward);assert.equal(vd.reward.awarded,true);
     vd.reward=undefined;dungeon.send('claim');await until(()=>!!vd.reward);assert.equal(vd.reward.awarded,false);
     await dungeon.leave();const office=await sdk.joinOrCreate('world',{zone:'office',token:a.token});rooms.push(office);const vo=watch(office);
-    // The equipment counter now lives inside 储物间 (Task 3's shop-area gate), so a fresh join
-    // (which spawns in the corridor) must walk there before buying.
+    // The equipment counter lives inside 储物间 (Task 3's shop-area gate). A fresh join now (Task
+    // 4) can land in any open area — including already inside 储物间 — so this walks from
+    // wherever it actually spawned rather than assuming the corridor.
     {
       await until(() => !!vo.snap);
       const oMe = () => vo.snap!.players.find(p => p.id === a.profile.id)!;
@@ -173,11 +198,25 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         }, 10000);
         await pause(100);
       };
-      const storageDoor = doorway(CORRIDOR_ROOMS.find(r => r.id === 'storage')!); // door: 'top' — corridor is above, so entry means increasing y
-      await oWalkTo('x', storageDoor.x);
-      await oWalkTo('y', storageDoor.y - 60);
-      for (let i = 0; i < 20; i++) { office.send('input', { down: true, seq: ++oSeq }); await pause(34); }
-      await until(() => oMe().area === 'storage', 10000);
+      if (oMe().area !== 'storage') {
+        if (oMe().area !== 'corridor') {
+          // Same reasoning as returnToCorridor() above: move both axes at once with hysteresis
+          // on the horizontal decision, since a spawn point can sit dead-centred under a shelf.
+          const area = AREAS[oMe().area], midX = area.width / 2, exit = area.exits[0], goalY = exit.rect.y + exit.rect.height / 2;
+          let decision = { left: false, right: false };
+          for (let tick = 0; oMe().area !== 'corridor'; tick++) {
+            if (tick >= 300) throw new Error(`${area.name} 走不出去`);
+            if (tick % 15 === 0) decision = { left: oMe().x > midX, right: oMe().x <= midX };
+            office.send('input', { ...decision, up: oMe().y > goalY, down: oMe().y <= goalY, seq: ++oSeq });
+            await pause(34);
+          }
+        }
+        const storageDoor = doorway(CORRIDOR_ROOMS.find(r => r.id === 'storage')!); // door: 'top' — corridor is above, so entry means increasing y
+        await oWalkTo('x', storageDoor.x);
+        await oWalkTo('y', storageDoor.y - 60);
+        for (let i = 0; i < 20; i++) { office.send('input', { down: true, seq: ++oSeq }); await pause(34); }
+        await until(() => oMe().area === 'storage', 10000);
+      }
     }
     office.send('shop',{weapon:'keyboard'});await until(()=>vo.profile?.weapon==='keyboard');
     assert.equal(vo.profile!.coins,50);
