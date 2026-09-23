@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { corridor } from '../shared/world';
+import { corridor, type Area } from '../shared/world';
 import { WORLD } from '../shared/game';
 
 export interface CameraView { x: number; y: number; width: number; height: number; zoom: number; following: boolean; atMax: boolean }
@@ -11,13 +11,14 @@ const EDGE_SPEED = 780;
 const ZOOM_RESPONSE = 90;
 
 /**
- * Age-of-Empires style floor camera: the wheel zooms about the cursor, the arrow keys,
- * screen edges and drags pan the view, and the character is never moved by any of it.
+ * Age-of-Empires style floor camera over one area: the wheel zooms about the cursor, the
+ * screen edges and drags pan the view, and the arrow keys belong to the character alone.
  */
 export class OfficeCamera {
   active = true;
   following = false;
   readonly maxZoom = 5;
+  private area: Area = corridor;
   private center = { x: corridor.width / 2, y: corridor.height / 2 };
   private targetZoom = 1;
   /** World point held under the cursor for the whole smooth zoom, the way an RTS does it. */
@@ -60,11 +61,16 @@ export class OfficeCamera {
     scene.events.once('shutdown', () => { window.removeEventListener('blur', leave); scene.scale.off('resize', resize); });
   }
   private get camera() { return this.scene.cameras.main; }
-  get minZoom() { return Math.min(this.camera.width / corridor.width, this.camera.height / corridor.height); }
-  configure(office: boolean) {
-    this.active = office; this.following = false;
+  get minZoom() { return Math.min(this.camera.width / this.area.width, this.camera.height / this.area.height); }
+  /** `null` means the dungeon. Switching area is a hard cut, so the overview lands at once. */
+  configure(area: Area | null) {
+    this.active = !!area; this.following = false;
+    if (area) this.area = area;
     this.resize();
-    if (office) this.overview();
+    if (!area) return;
+    this.overview();
+    this.center = { x: this.area.width / 2, y: this.area.height / 2 };
+    this.glide = undefined; this.camera.setZoom(this.targetZoom); this.apply();
   }
   private resize() {
     const relativeZoom = this.camera.zoom / this.minZoom;
@@ -84,7 +90,7 @@ export class OfficeCamera {
     if (!this.active) return;
     this.following = false; this.anchor = undefined;
     this.targetZoom = this.minZoom;
-    this.glide = { x: corridor.width / 2, y: corridor.height / 2 };
+    this.glide = { x: this.area.width / 2, y: this.area.height / 2 };
   }
   /** Zoom about a screen point, keeping the world under it pinned for the whole animation. */
   zoomBy(factor: number, screenX = this.camera.x + this.camera.width / 2, screenY = this.camera.y + this.camera.height / 2) {
@@ -157,8 +163,8 @@ export class OfficeCamera {
   }
   private apply() {
     const halfW = this.camera.width / this.camera.zoom / 2, halfH = this.camera.height / this.camera.zoom / 2;
-    this.center.x = halfW >= corridor.width / 2 ? corridor.width / 2 : Phaser.Math.Clamp(this.center.x, halfW, corridor.width - halfW);
-    this.center.y = halfH >= corridor.height / 2 ? corridor.height / 2 : Phaser.Math.Clamp(this.center.y, halfH, corridor.height - halfH);
+    this.center.x = halfW >= this.area.width / 2 ? this.area.width / 2 : Phaser.Math.Clamp(this.center.x, halfW, this.area.width - halfW);
+    this.center.y = halfH >= this.area.height / 2 ? this.area.height / 2 : Phaser.Math.Clamp(this.center.y, halfH, this.area.height - halfH);
     this.camera.centerOn(this.center.x, this.center.y);
   }
 }

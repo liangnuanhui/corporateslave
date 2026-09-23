@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
-import { corridor, CORRIDOR_ROOMS } from '../shared/world';
-import { drawOffice, createOfficeAvatar } from './office-map';
+import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
+import { drawArea, createOfficeAvatar } from './render/area-renderer';
 import { OfficeCamera } from './office-camera';
 
 interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse }
@@ -10,9 +10,10 @@ export class OfficeScene extends Phaser.Scene {
   private visuals = new Map<string, Visual>();
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private background!: Phaser.GameObjects.Image;
-  private floorPlan!: Phaser.GameObjects.Container;
+  private floorPlan?: Phaser.GameObjects.Container;
   private officeCamera!: OfficeCamera;
   private officeMode = true;
+  private currentArea: AreaId = 'corridor';
   private cameraElapsed = 0;
   private seq = 0;
   private inputElapsed = 0;
@@ -39,11 +40,11 @@ export class OfficeScene extends Phaser.Scene {
     rects.forEach(([x,y,w,h], i) => this.textures.get('atlas').add(i, 0, x,y,w,h));
     this.background = this.add.image(0, 0, 'office').setOrigin(0).setDisplaySize(WORLD.width, WORLD.height);
     this.background.setVisible(false);
-    this.floorPlan = drawOffice(this);
+    this.floorPlan = drawArea(this, corridor);
     createOfficeAvatar(this);
     this.officeCamera = new OfficeCamera(this, this.blocked);
-    this.officeCamera.configure(true);
-    this.preview = this.add.sprite(corridor.spawnPoints[0].x, corridor.spawnPoints[0].y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(20);
+    this.officeCamera.configure(corridor);
+    this.preview = this.add.sprite(corridor.spawnPoints[0].x, corridor.spawnPoints[0].y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(corridor.spawnPoints[0].y + 12);
     this.offline = this.add.text(WORLD.width / 2, WORLD.height - 58, '创建角色，开启你的下班冒险', { fontSize: '16px', fontFamily: 'sans-serif', color: '#fff4dd', backgroundColor: '#16202bd9', padding: { x: 20, y: 12 } }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false);
     this.keys = this.input.keyboard!.addKeys('A,D,W,S,SPACE,J,E,LEFT,RIGHT,UP,DOWN') as Record<string, Phaser.Input.Keyboard.Key>;
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
@@ -68,9 +69,14 @@ export class OfficeScene extends Phaser.Scene {
     const snap = this.network.snapshot;
     const blocked = this.blocked() || document.hidden || !document.hasFocus();
     const office = snap?.zone !== 'dungeon';
-    if (office !== this.officeMode) {
-      this.officeMode = office; this.officeCamera.configure(office);
-      this.floorPlan.setVisible(office); this.background.setVisible(!office);
+    const area = office ? (snap?.players.find(p => p.id === this.network.profile?.id)?.area ?? this.currentArea) : null;
+    // The snapshot is the authority: the moment the drawn area disagrees with it, cut to the new one.
+    if (office !== this.officeMode || (area && area !== this.currentArea)) {
+      this.officeMode = office; this.currentArea = area ?? this.currentArea;
+      this.floorPlan?.destroy();
+      this.floorPlan = office ? drawArea(this, AREAS[this.currentArea]) : undefined;
+      this.background.setVisible(!office);
+      this.officeCamera.configure(office ? AREAS[this.currentArea] : null);
       for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
       this.visuals.clear(); this.resetInput();
     }
@@ -97,9 +103,11 @@ export class OfficeScene extends Phaser.Scene {
     if (this.cameraElapsed >= 70) { this.cameraElapsed = 0; this.network.emit('camera', this.officeCamera.view); }
     if (!snap) return;
     this.background.setTint(snap.zone === 'dungeon' ? 0xb2a5d5 : 0xffffff);
-    const ids = new Set([...snap.players.map(p=>p.id), ...snap.enemies.map(e=>e.id)]);
+    // Another area is another room: its players are not drawn at all, and their visuals go away.
+    const visible = office ? snap.players.filter(p => p.area === this.currentArea) : snap.players;
+    const ids = new Set([...visible.map(p=>p.id), ...snap.enemies.map(e=>e.id)]);
     for (const [id, v] of this.visuals) if (!ids.has(id)) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); this.visuals.delete(id); }
-    for (const player of snap.players) this.renderActor(player, false, time, delta);
+    for (const player of visible) this.renderActor(player, false, time, delta);
     for (const enemy of snap.enemies) this.renderActor(enemy, true, time, delta);
   }
   private renderActor(actor: Actor | Enemy, enemy: boolean, time: number, delta: number) {
@@ -125,7 +133,9 @@ export class OfficeScene extends Phaser.Scene {
     v.sprite.setDisplaySize(width, height).setFlipX(enemy ? actor.face > 0 : actor.face < 0).setAlpha(actor.hp === 0 ? .4 : 1);
     const role = 'role' in actor ? actor.role : '';
     v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
-    v.sprite.setDepth(20); v.label.setDepth(30); v.health.setDepth(30);
+    // Oblique depth: whoever stands lower on the floor is in front. Labels never take part.
+    const depth = office ? v.sprite.y + 12 : 20;
+    v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000);
     v.label.setText(actor.name + (my ? ' · 你' : '') + (!actor.hp && !enemy ? ' · 休息中' : '')).setPosition(v.sprite.x, v.sprite.y - (office ? 26 : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
     v.health.clear();
     if (enemy && actor.hp > 0) { v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32,v.sprite.y-height-9,64,5); v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32,v.sprite.y-height-9,64*actor.hp/(actor as Enemy).maxHp,5); }

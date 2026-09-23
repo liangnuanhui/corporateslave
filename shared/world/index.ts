@@ -1,5 +1,5 @@
 import type { Input } from '../game.js';
-import type { Area, AreaId, Exit } from './types.js';
+import type { Area, AreaId, Exit, Furniture } from './types.js';
 import { corridor, CORRIDOR_ROOMS, doorway } from './corridor.js';
 import { meeting } from './meeting.js';
 import { storage } from './storage.js';
@@ -26,6 +26,10 @@ for (const room of [meeting, storage]) {
 }
 
 export const AREAS: Record<AreaId, Area> = { corridor, meeting, storage };
+
+/** Render heights live here so the three area files stay pure footprints. */
+const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: 26, shelf: 62, counter: 34, sofa: 30, plant: 26 };
+for (const area of Object.values(AREAS)) for (const item of area.furniture) item.lift ??= LIFT[item.kind];
 
 export function exitAt(area: Area, x: number, y: number): Exit | undefined {
   return area.exits.find(e => x >= e.rect.x && x <= e.rect.x + e.rect.width && y >= e.rect.y && y <= e.rect.y + e.rect.height);
