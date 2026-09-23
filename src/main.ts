@@ -42,7 +42,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
     <footer><span>本故事纯属虚构，如有雷同，应该是人生。</span><span>多人体验版 <span class="footer-dot">·</span> MVP 0.1</span></footer>
   </main>
   <dialog id="auth-dialog"><div class="dialog-top"><span class="dialog-mark">${icon('coffee')}</span><button class="icon-button close-dialog" aria-label="关闭">${icon('close')}</button></div><h2 id="auth-title">欢迎加入摸鱼科技</h2><p class="dialog-subtitle">名字可以随意，下班必须准时。</p><form id="auth-form"><div id="register-fields"><label>游戏昵称<input name="name" placeholder="例如：咖啡不加班" maxlength="12" value="摸鱼小王" autocomplete="nickname"/></label><fieldset><legend>选择你的职级</legend><div class="role-options">${ROLES.map((r,i)=>`<label class="role-option"><input type="radio" name="role" value="${r.id}" ${i===0?'checked':''}/><span><strong>${r.name}</strong><small>攻击 ${r.attack} · 生命 100</small></span></label>`).join('')}</div></fieldset></div><label>账号<input name="username" placeholder="3—24 位字母、数字或下划线" pattern="[a-zA-Z0-9_]{3,24}" required autocomplete="username"/></label><label>密码<input name="password" type="password" placeholder="至少 8 位" minlength="8" maxlength="128" required autocomplete="new-password"/></label><p id="auth-error" class="error" role="alert"></p><button type="submit" id="auth-submit" class="button primary full">领取工牌，开始冒险${icon('arrow')}</button></form><div class="auth-bottom"><button id="auth-toggle" class="text-button">已有账号？直接登录</button><button id="guest" class="text-button">快速试玩</button></div><p class="fine-print">账号支持跨设备恢复。快速试玩身份仅保留在此浏览器。</p></dialog>
-  <dialog id="shop-dialog" class="shop-dialog"><div class="dialog-top"><span class="dialog-mark">${icon('bag')}</span><button class="icon-button close-dialog" aria-label="关闭">${icon('close')}</button></div><h2>好装备，早下班。</h2><p class="dialog-subtitle">积分换装备，给下一次挑战加点底气。</p><div class="shop-balance">可用积分 <strong id="shop-coins">0</strong><span>₵</span></div><div id="shop-items"></div><p class="fine-print">装备购买与切换会立即保存。公共办公室内可使用商店。</p></dialog>
+  <dialog id="shop-dialog" class="shop-dialog"><div class="dialog-top"><span class="dialog-mark">${icon('bag')}</span><button class="icon-button close-dialog" aria-label="关闭">${icon('close')}</button></div><h2>好装备，早下班。</h2><p class="dialog-subtitle">积分换装备，给下一次挑战加点底气。</p><div class="shop-balance">可用积分 <strong id="shop-coins">0</strong><span>₵</span></div><div id="shop-items"></div><p class="fine-print">装备购买与切换会立即保存。请到储物间的装备台前购买。</p></dialog>
   <dialog id="profile-dialog"><div class="dialog-top"><span class="dialog-mark">${icon('office')}</span><button class="icon-button close-dialog" aria-label="关闭">${icon('close')}</button></div><h2>我的工牌</h2><div id="profile-details"></div><button id="logout" class="button secondary full">退出登录</button></dialog>
   <div id="toast" role="status" aria-live="polite"></div>`;
 
@@ -80,6 +80,8 @@ function interact() {
 function openShop() {
   if (!network.profile) { show(authDialog); return; }
   if (network.snapshot?.zone !== 'office') { toast('请先返回公共办公室，再购买装备'); return; }
+  const actor = network.snapshot.players.find(p=>p.id===network.profile!.id);
+  if (!actor || actor.area !== 'storage') { toast('请先前往储物间的装备台前，再打开商店'); return; }
   renderShop(); show(shopDialog);
 }
 function renderShop() {
@@ -111,6 +113,7 @@ function renderSnapshot() {
   $('member-count').textContent = `${snap?.players.length||0}/${dungeon?8:24}`;
   $('room-label').textContent = snap?`房间 ${snap.roomId.slice(0,8)}`:'等待加入办公室';
   $('nav-office').classList.toggle('active',!dungeon);
+  $('nav-shop').classList.toggle('muted', !(actor && actor.area === 'storage')); // purely visual — click still works and explains where to go
   const hp = snap?.players.find(a=>a.id===p?.id)?.hp ?? 100;
   $('health-label').textContent = `${hp} / 100`; $('health-fill').style.width=`${hp}%`;
   const killed = snap?.enemies.filter(e=>e.hp===0).length||0;

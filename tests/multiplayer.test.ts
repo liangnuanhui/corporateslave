@@ -20,7 +20,7 @@ async function start(data:string) {
 async function stop(child:ChildProcess){if(child.exitCode!==null)return; const closed=new Promise<void>(r=>child.once('exit',()=>r())); child.kill('SIGTERM');await closed;}
 async function leave(room:Room){if(room.connection.isOpen)await room.leave();}
 async function register(username:string){ const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:'mvp-test-password',name:username,role:'rookie'})});assert.equal(r.status,200);return r.json() as Promise<{token:string;profile:Profile}>; }
-function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string}={};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;});room.send('sync');return value;}
+function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string}}={};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;});room.send('sync');return value;}
 
 test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:90000}, async()=>{
   const data=await mkdtemp(join(tmpdir(),'niuma-test-'));let server=await start(data);const rooms:Room[]=[];
@@ -44,6 +44,10 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     assert.ok(va.snap!.players.find(p=>p.id===a.profile.id)!.x<1280);
     let officeSeq = 15;
     const myself = () => va.snap!.players.find(p => p.id === a.profile.id)!;
+    // Read through a function (not `va.transition` directly) — TS narrows a property right after
+    // `va.transition = undefined` to the literal `undefined` type and that narrowing survives the
+    // intervening `await`s below, which turns a later `va.transition?.to` into a `never` access.
+    const transitionOf = () => va.transition;
     const walkTo = async (axis: 'x' | 'y', target: number) => {
       await until(async () => {
         const distance = target - myself()[axis];
@@ -67,7 +71,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room), fromAbove = room.door === 'top';
       const open = room.id === 'meeting' || room.id === 'storage';
-      va.notice = undefined;
+      va.notice = undefined; va.transition = undefined;
       await walkTo('x', door.x);
       await walkTo('y', door.y + (fromAbove ? -60 : 60));
       for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
@@ -76,6 +80,11 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         // area (exit.to / AREAS lookup wrong), or the exit.at landing point being unreachable.
         await until(() => myself().area === room.id, 10000);
         assertAgree();
+        // Falsifiable by: a renamed field, an id sent in place of the display name (both would
+        // desync `to`/`name` from the room's actual id/name), or the message going to the wrong
+        // client (va.transition would stay undefined and the `until` above would time out first).
+        assert.equal(transitionOf()?.to, room.id, `${room.name} 的 transition.to 应该指向 ${room.id}`);
+        assert.equal(transitionOf()?.name, room.name, `${room.name} 的 transition.name 应该是显示名而不是 id`);
         console.log(`integration: entered ${room.name}`);
         // Push through the room's own door for a fixed duration, same technique as the corridor
         // approach above. A coarse walkTo() convergence (16px tolerance) can halt just short of
