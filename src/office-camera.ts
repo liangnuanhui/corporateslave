@@ -9,6 +9,9 @@ const EDGE = 28;
 /** Pan speed in screen pixels per second, so panning feels the same at every zoom. */
 const EDGE_SPEED = 780;
 const ZOOM_RESPONSE = 90;
+/** The camera toolbar (`bottom:45px`, 39px tall) and the hint bar float over the stage floor.
+ *  Framing an area into the band above them is the only way a room's south door stays visible. */
+const BOTTOM_UI = 86;
 
 /**
  * Age-of-Empires style floor camera over one area: the wheel zooms about the cursor, the
@@ -61,16 +64,21 @@ export class OfficeCamera {
     scene.events.once('shutdown', () => { window.removeEventListener('blur', leave); scene.scale.off('resize', resize); });
   }
   private get camera() { return this.scene.cameras.main; }
-  get minZoom() { return Math.min(this.camera.width / this.area.width, this.camera.height / this.area.height); }
+  /** Usable floor height: the bottom band belongs to the toolbar and the hint bar. */
+  private get viewHeight() { return Math.max(100, this.camera.height - BOTTOM_UI); }
+  get minZoom() { return Math.min(this.camera.width / this.area.width, this.viewHeight / this.area.height); }
   /** `null` means the dungeon. Switching area is a hard cut, so the overview lands at once. */
   configure(area: Area | null) {
-    this.active = !!area; this.following = false;
-    if (area) this.area = area;
+    this.active = !!area;
+    if (!area) { this.following = false; this.resize(); return; }
+    this.area = area;
+    // Changing area must not silently drop camera follow — the player never asked for that.
+    const following = this.following;
     this.resize();
-    if (!area) return;
     this.overview();
     this.center = { x: this.area.width / 2, y: this.area.height / 2 };
-    this.glide = undefined; this.camera.setZoom(this.targetZoom); this.apply();
+    this.glide = undefined; this.following = following;
+    this.camera.setZoom(this.targetZoom); this.apply();
   }
   private resize() {
     const relativeZoom = this.camera.zoom / this.minZoom;
@@ -99,7 +107,7 @@ export class OfficeCamera {
     if (Math.abs(next - this.targetZoom) < 1e-4) return;
     this.following = false; this.glide = undefined; this.targetZoom = next;
     const screen = { x: screenX - this.camera.x - this.camera.width / 2, y: screenY - this.camera.y - this.camera.height / 2 };
-    this.anchor = { screen, world: { x: this.center.x + screen.x / this.camera.zoom, y: this.center.y + screen.y / this.camera.zoom } };
+    this.anchor = { screen, world: { x: this.center.x + screen.x / this.camera.zoom, y: this.center.y + this.lookBelow + screen.y / this.camera.zoom } };
   }
   /** Move the view by a screen-space delta, so panning feels identical at every zoom. */
   private panBy(dx: number, dy: number) {
@@ -130,7 +138,8 @@ export class OfficeCamera {
     if (pan) this.panBy(pan.x, pan.y);
     else if (this.anchor) {
       this.center.x = this.anchor.world.x - this.anchor.screen.x / this.camera.zoom;
-      this.center.y = this.anchor.world.y - this.anchor.screen.y / this.camera.zoom;
+      // lookBelow shrinks as the zoom grows, so it has to be re-subtracted every frame.
+      this.center.y = this.anchor.world.y - this.lookBelow - this.anchor.screen.y / this.camera.zoom;
       if (Math.abs(this.camera.zoom - this.targetZoom) <= 1e-4) this.anchor = undefined;
       this.apply();
     } else if (this.glide) {
@@ -157,14 +166,16 @@ export class OfficeCamera {
     }
     return x || y ? { x, y } : undefined;
   }
+  /** World distance the camera looks below the framed band's centre, to park it under the toolbar. */
+  private get lookBelow() { return BOTTOM_UI / 2 / this.camera.zoom; }
   get view(): CameraView {
     const width = this.camera.width / this.camera.zoom, height = this.camera.height / this.camera.zoom;
-    return { x: this.center.x - width / 2, y: this.center.y - height / 2, width, height, zoom: this.camera.zoom / this.minZoom, following: this.following, atMax: this.targetZoom >= this.maxZoom - .001 };
+    return { x: this.center.x - width / 2, y: this.center.y + this.lookBelow - height / 2, width, height, zoom: this.camera.zoom / this.minZoom, following: this.following, atMax: this.targetZoom >= this.maxZoom - .001 };
   }
   private apply() {
-    const halfW = this.camera.width / this.camera.zoom / 2, halfH = this.camera.height / this.camera.zoom / 2;
+    const halfW = this.camera.width / this.camera.zoom / 2, halfH = this.viewHeight / this.camera.zoom / 2;
     this.center.x = halfW >= this.area.width / 2 ? this.area.width / 2 : Phaser.Math.Clamp(this.center.x, halfW, this.area.width - halfW);
     this.center.y = halfH >= this.area.height / 2 ? this.area.height / 2 : Phaser.Math.Clamp(this.center.y, halfH, this.area.height - halfH);
-    this.camera.centerOn(this.center.x, this.center.y);
+    this.camera.centerOn(this.center.x, this.center.y + this.lookBelow);
   }
 }

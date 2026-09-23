@@ -1,9 +1,10 @@
 import Phaser from 'phaser';
 import { CORRIDOR_ROOMS, WALL_SIZE, doorway, type Area, type Furniture, type Rect } from '../../shared/world';
-import { depthOf, faces, shade, type Solid } from './oblique';
+import { depthOf, faces, shade, signWall, wallRole, type Solid } from './oblique';
 
 const WALL_LIFT = 46;
-/** A wall on the south edge stands between the camera and the player, so it stays a low ledge. */
+/** The whole south edge of a room is walkable, so a full-height south wall would draw over any
+ *  character walking along it. It stays a low ledge that only clips their feet. */
 const FRONT_WALL_LIFT = 12;
 const CHAIR_LIFT = 18;
 /** Above every solid, below the name plates at 10000 — for labels a character can never reach. */
@@ -54,9 +55,9 @@ export function drawArea(scene: Phaser.Scene, area: Area) {
   }
 
   function drawWall(wall: Rect) {
-    const flat = wall.width > wall.height;
-    if (flat && wall.y <= 0) return backWall(wall);
-    box(wall, flat && wall.y + wall.height >= area.height ? FRONT_WALL_LIFT : WALL_LIFT, WALL_TOP);
+    const role = wallRole(wall, area.height);
+    if (role === 'back') return backWall(wall);
+    box(wall, role === 'front' ? FRONT_WALL_LIFT : WALL_LIFT, WALL_TOP);
   }
 
   function chair(x: number, y: number, horizontal = false) {
@@ -160,9 +161,8 @@ export function drawArea(scene: Phaser.Scene, area: Area) {
       rect(x - 6, y, width + 12, 12, 0xe6c984);
       text(x + width / 2, y + (top ? 34 : -26), `↤ ${exit.label}`, 17, '#6b805f');
     }
-    // The name is painted on the widest stretch of back wall — the one surface nothing else uses,
-    // and far enough right that the HUD in the top-left corner never sits on it.
-    const back = area.walls.filter(w => w.width > w.height && w.y <= 0).reduce<Rect | undefined>((best, w) => !best || w.width >= best.width ? w : best, undefined);
+    // The name is painted on the back wall — the one surface in a room that nothing else uses.
+    const back = signWall(area.walls, area.height);
     if (back) text(back.x + back.width / 2, 38, area.name, 26, '#e3ece4', true, depthOf(back) + .5);
   }
 

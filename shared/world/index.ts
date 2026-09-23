@@ -27,8 +27,10 @@ for (const room of [meeting, storage]) {
 
 export const AREAS: Record<AreaId, Area> = { corridor, meeting, storage };
 
-/** Render heights live here so the three area files stay pure footprints. */
-const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: 26, shelf: 62, counter: 34, sofa: 30, plant: 26 };
+/** Render heights live here so the three area files stay pure footprints. Nothing may reach 34:
+ *  a character standing north of a solid is closest at `y - 14` and their head is at `y - 34`,
+ *  so a taller lift raises the top face over them and swallows them whole. */
+const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: 26, shelf: 32, counter: 32, sofa: 30, plant: 26 };
 for (const area of Object.values(AREAS)) for (const item of area.furniture) item.lift ??= LIFT[item.kind];
 
 export function exitAt(area: Area, x: number, y: number): Exit | undefined {

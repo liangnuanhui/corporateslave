@@ -57,3 +57,20 @@ test('leaving a room lands back in the corridor outside the trigger', () => {
     assert.equal(exitAt(corridor, state.x, state.y), undefined, `${room.name} 的出口落点落在走廊触发器里`);
   }
 });
+
+test('every furniture item gets a render height, and none is tall enough to swallow a character', () => {
+  // A character standing north of a solid is closest at `y - radius`; their sprite spans
+  // 20px either side of that, so the head sits at `y - 34`. The top face starts at `y - lift`.
+  const HEAD = 34;
+  for (const area of Object.values(AREAS)) {
+    for (const item of area.furniture) {
+      assert.equal(typeof item.lift, 'number', `${area.id} 的 ${item.kind} 没有 lift`);
+      assert.ok(item.lift! < HEAD, `${area.id} 的 ${item.kind} lift=${item.lift}，会把北侧的人整个盖住`);
+    }
+  }
+  // Pin concrete values so a silent table edit is caught.
+  assert.equal(storage.furniture.find(f => f.kind === 'shelf')!.lift, 32);
+  assert.equal(storage.furniture.find(f => f.kind === 'counter')!.lift, 32);
+  assert.equal(meeting.furniture.find(f => f.kind === 'table')!.lift, 26);
+  assert.equal(corridor.furniture.find(f => f.kind === 'desk')!.lift, 22);
+});
