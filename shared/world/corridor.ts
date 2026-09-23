@@ -1,11 +1,7 @@
-/** One floor plan shared by rendering, collision and the minimap. Units are world pixels. */
-export interface Rect { x: number; y: number; width: number; height: number }
-export interface OfficeRoom extends Rect {
-  id: string; name: string; subtitle: string; color: number; door: 'top' | 'bottom';
-}
-export interface Furniture extends Rect { kind: 'desk' | 'table' | 'shelf' | 'counter' | 'sofa' | 'plant' }
-export const OFFICE = { width: 1920, height: 1200, radius: 14, speed: 235, spawn: { x: 260, y: 600 } };
-export const OFFICE_ROOMS: OfficeRoom[] = [
+import type { Area, Furniture, Rect } from './types.js';
+
+export interface OfficeRoom extends Rect { id: string; name: string; subtitle: string; color: number; door: 'top' | 'bottom' }
+export const CORRIDOR_ROOMS: OfficeRoom[] = [
   { id: 'office-1', name: '办公室 1', subtitle: 'PRODUCT & DESIGN', x: 80, y: 100, width: 540, height: 420, color: 0xced8c0, door: 'bottom' },
   { id: 'meeting', name: '大会议室', subtitle: 'MEETING ROOM', x: 690, y: 100, width: 540, height: 420, color: 0xc8d8da, door: 'bottom' },
   { id: 'office-2', name: '办公室 2', subtitle: 'ENGINEERING', x: 1300, y: 100, width: 540, height: 420, color: 0xd8d0be, door: 'bottom' },
@@ -18,7 +14,7 @@ export const DOOR_WIDTH = 112;
 export function doorway(room: OfficeRoom) {
   return { x: room.x + room.width / 2, y: room.door === 'top' ? room.y : room.y + room.height };
 }
-export const OFFICE_WALLS: Rect[] = OFFICE_ROOMS.flatMap(room => {
+export const CORRIDOR_WALLS: Rect[] = CORRIDOR_ROOMS.flatMap(room => {
   const { x, y, width, height } = room, t = WALL_SIZE;
   const doorY = room.door === 'top' ? y : y + height - t;
   const closedY = room.door === 'top' ? y + height - t : y;
@@ -30,7 +26,7 @@ export const OFFICE_WALLS: Rect[] = OFFICE_ROOMS.flatMap(room => {
     { x: x + width - segment, y: doorY, width: segment, height: t },
   ];
 });
-export const OFFICE_FURNITURE: Furniture[] = OFFICE_ROOMS.flatMap(room => {
+export const CORRIDOR_FURNITURE: Furniture[] = CORRIDOR_ROOMS.flatMap(room => {
   const items: Furniture[] = [];
   const add = (kind: Furniture['kind'], x: number, y: number, width: number, height: number) => items.push({ kind, x: room.x + x, y: room.y + y, width, height });
   if (room.id.startsWith('office')) {
@@ -51,32 +47,15 @@ export const OFFICE_FURNITURE: Furniture[] = OFFICE_ROOMS.flatMap(room => {
   add('plant', 455, 48, 32, 32);
   return items;
 });
-export const OFFICE_OBSTACLES: Rect[] = [...OFFICE_WALLS, ...OFFICE_FURNITURE];
 export function roomAt(x: number, y: number): OfficeRoom | undefined {
-  return OFFICE_ROOMS.find(room => x > room.x && x < room.x + room.width && y > room.y && y < room.y + room.height);
+  return CORRIDOR_ROOMS.find(room => x > room.x && x < room.x + room.width && y > room.y && y < room.y + room.height);
 }
-export function canStandAt(x: number, y: number) {
-  const r = OFFICE.radius;
-  if (x < 48 + r || x > OFFICE.width - 48 - r || y < 64 + r || y > OFFICE.height - 64 - r) return false;
-  return !OFFICE_OBSTACLES.some(rect => {
-    const closestX = Math.max(rect.x, Math.min(x, rect.x + rect.width));
-    const closestY = Math.max(rect.y, Math.min(y, rect.y + rect.height));
-    return (x - closestX) ** 2 + (y - closestY) ** 2 < r * r;
-  });
-}
-export function moveOffice(actor: { x: number; y: number; vy: number; face: number }, input: { left: boolean; right: boolean; up?: boolean; down?: boolean }, dt = 1 / 30) {
-  const dx = Number(input.right) - Number(input.left), dy = Number(!!input.down) - Number(!!input.up);
-  const length = Math.hypot(dx, dy);
-  actor.vy = 0;
-  if (!length) return;
-  if (dx) actor.face = dx;
-  // Substeps prevent tunnelling even if callers use a larger frame interval.
-  const distance = OFFICE.speed * Math.min(Math.max(dt, 0), .15);
-  const steps = Math.ceil(distance / (OFFICE.radius / 2));
-  for (let i = 0; i < steps; i++) {
-    const x = actor.x + dx / length * distance / steps;
-    if (canStandAt(x, actor.y)) actor.x = x;
-    const y = actor.y + dy / length * distance / steps;
-    if (canStandAt(actor.x, y)) actor.y = y;
-  }
-}
+export const corridor: Area = {
+  id: 'corridor', name: '公共走廊', width: 1920, height: 1200,
+  bounds: { x: 48, y: 64, width: 1824, height: 1072 },
+  radius: 14, speed: 235,
+  spawnPoints: [{ x: 260, y: 600 }, { x: 420, y: 600 }, { x: 1560, y: 600 }],
+  walls: CORRIDOR_WALLS, furniture: CORRIDOR_FURNITURE,
+  obstacles: [...CORRIDOR_WALLS, ...CORRIDOR_FURNITURE],
+  exits: [],   // Task 2 填充
+};

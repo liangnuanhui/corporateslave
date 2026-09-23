@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { OFFICE, OFFICE_ROOMS, OFFICE_WALLS, OFFICE_FURNITURE, doorway, type Furniture } from '../shared/office';
+import { corridor, CORRIDOR_ROOMS, CORRIDOR_FURNITURE, doorway, type Furniture } from '../shared/world';
 
 /** Draw genuine overhead geometry, so zooming never stretches a side-view background. */
 export function drawOffice(scene: Phaser.Scene) {
@@ -10,8 +10,8 @@ export function drawOffice(scene: Phaser.Scene) {
     const label = scene.add.text(x, y, value, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal' }).setOrigin(.5);
     root.add(label); return label;
   };
-  rect(42, 58, OFFICE.width - 72, OFFICE.height - 104, 0x0f1e24);
-  rect(48, 64, OFFICE.width - 96, OFFICE.height - 128, 0xeee4cc);
+  rect(42, 58, corridor.width - 72, corridor.height - 104, 0x0f1e24);
+  rect(48, 64, corridor.width - 96, corridor.height - 128, 0xeee4cc);
   for (let x = 48; x < 1872; x += 48) rect(x, 64, 1, 1072, 0xded4bf);
   for (let y = 64; y < 1136; y += 48) rect(48, y, 1824, 1, 0xded4bf);
   rect(80, 552, 1760, 96, 0xc6cbb8);
@@ -19,7 +19,7 @@ export function drawOffice(scene: Phaser.Scene) {
   for (let x = 570; x < 1600; x += 310) text(x, 600, '›  ›  ›', 28, '#9da88e');
   text(960, 35, '摸 鱼 科 技   /   1 F', 22, '#a6b8ae');
   text(960, 1167, '一 层 平 面 图     ·     每 个 工 位，都 有 一 个 下 班 的 梦', 17, '#8a9c97');
-  for (const room of OFFICE_ROOMS) {
+  for (const room of CORRIDOR_ROOMS) {
     rect(room.x, room.y, room.width, room.height, room.color);
     for (let y = room.y + 20; y < room.y + room.height; y += 28) rect(room.x + 12, y, room.width - 24, 1, room.color - 0x090909);
     const titleY = room.y + (room.door === 'top' ? 76 : 55);
@@ -30,14 +30,14 @@ export function drawOffice(scene: Phaser.Scene) {
     rect(door.x - 42, door.y - 2, 84, 4, 0xa78a51);
     text(door.x, door.y + (room.door === 'top' ? -32 : 35), room.door === 'top' ? '↓' : '↑', 21, '#6b805f');
   }
-  for (const wall of OFFICE_WALLS) {
+  for (const wall of corridor.walls) {
     rect(wall.x + 4, wall.y + 5, wall.width, wall.height, 0x8a998c);
     rect(wall.x, wall.y, wall.width, wall.height, 0x4f665d);
     rect(wall.x, wall.y, wall.width, Math.min(4, wall.height), 0x91a598);
   }
-  for (const item of OFFICE_FURNITURE) drawFurniture(item);
+  for (const item of CORRIDOR_FURNITURE) drawFurniture(item);
   // Windows sit inside the outer walls; doors remain visibly open.
-  for (const room of OFFICE_ROOMS.filter(r => r.door === 'bottom')) {
+  for (const room of CORRIDOR_ROOMS.filter(r => r.door === 'bottom')) {
     for (const offset of [65, 345]) { rect(room.x + offset, room.y, 130, 12, 0x91c9cb); rect(room.x + offset + 63, room.y, 4, 12, 0xe0f3e9); }
   }
   text(1730, 598, '电梯  E →', 21, '#526747', true);

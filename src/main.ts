@@ -1,7 +1,7 @@
 import './style.css';
 import { Network } from './network';
 import { createGame } from './game';
-import { roomAt } from '../shared/office';
+import { roomAt } from '../shared/world';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
 import { ROLES, WEAPONS, damageFor, type Zone } from '../shared/game';
 

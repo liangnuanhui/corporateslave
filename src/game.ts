@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
-import { OFFICE, OFFICE_ROOMS } from '../shared/office';
+import { corridor, CORRIDOR_ROOMS } from '../shared/world';
 import { drawOffice, createOfficeAvatar } from './office-map';
 import { OfficeCamera } from './office-camera';
 
@@ -43,7 +43,7 @@ export class OfficeScene extends Phaser.Scene {
     createOfficeAvatar(this);
     this.officeCamera = new OfficeCamera(this, this.blocked);
     this.officeCamera.configure(true);
-    this.preview = this.add.sprite(OFFICE.spawn.x, OFFICE.spawn.y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(20);
+    this.preview = this.add.sprite(corridor.spawnPoints[0].x, corridor.spawnPoints[0].y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(20);
     this.offline = this.add.text(WORLD.width / 2, WORLD.height - 58, '创建角色，开启你的下班冒险', { fontSize: '16px', fontFamily: 'sans-serif', color: '#fff4dd', backgroundColor: '#16202bd9', padding: { x: 20, y: 12 } }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false);
     this.keys = this.input.keyboard!.addKeys('A,D,W,S,SPACE,J,E,LEFT,RIGHT,UP,DOWN') as Record<string, Phaser.Input.Keyboard.Key>;
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
@@ -133,7 +133,7 @@ export class OfficeScene extends Phaser.Scene {
   }
   zoomBy(factor: number) { this.officeCamera?.zoomBy(factor); }
   overview() { this.officeCamera?.overview(); }
-  focusRoom(id: string) { const room = OFFICE_ROOMS.find(r => r.id === id); if (room) this.officeCamera?.focus(room.x + room.width / 2, room.y + room.height / 2); }
+  focusRoom(id: string) { const room = CORRIDOR_ROOMS.find(r => r.id === id); if (room) this.officeCamera?.focus(room.x + room.width / 2, room.y + room.height / 2); }
   lookAt(x: number, y: number) { this.officeCamera?.look(x, y); }
   locatePlayer() {
     if (this.officeCamera?.following) { this.officeCamera.following = false; return; }

@@ -1,7 +1,7 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { OFFICE, moveOffice } from '../shared/office.js';
+import { corridor, moveIn } from '../shared/world/index.js';
 import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
@@ -58,7 +58,7 @@ export class WorldRoom extends Room {
     activeAccounts.set(profile.id, client.sessionId);
     this.players.set(client.sessionId, {
       id: profile.id, name: profile.name, role: profile.role, profile,
-      x: (this.zone === 'office' ? OFFICE.spawn.x : 160) + this.players.size * 45, y: this.zone === 'office' ? OFFICE.spawn.y : WORLD.floor, vy: 0, face: 1, hp: 100,
+      x: (this.zone === 'office' ? corridor.spawnPoints[0].x : 160) + this.players.size * 45, y: this.zone === 'office' ? corridor.spawnPoints[0].y : WORLD.floor, vy: 0, face: 1, hp: 100,
       weapon: profile.weapon, action: 'idle', ack: 0, input: idleInput(), lastInput: 0,
       attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false,
     });
@@ -91,7 +91,7 @@ export class WorldRoom extends Room {
         else continue;
       }
       const input = this.elapsed - p.lastInput > 350 || p.dropped ? idleInput() : p.input;
-      if (this.zone === 'office') moveOffice(p, input); else move(p, input);
+      if (this.zone === 'office') moveIn(corridor, p, input); else move(p, input);
       p.ack = p.input.seq;
       // Jump is an edge-triggered command; holding it cannot cause repeated jumps.
       p.input.jump = false;

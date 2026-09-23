@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { OFFICE } from '../shared/office';
+import { corridor } from '../shared/world';
 import { WORLD } from '../shared/game';
 
 export interface CameraView { x: number; y: number; width: number; height: number; zoom: number; following: boolean; atMax: boolean }
@@ -19,7 +19,7 @@ export class OfficeCamera {
   active = true;
   following = false;
   readonly maxZoom = 5;
-  private center = { x: OFFICE.width / 2, y: OFFICE.height / 2 };
+  private center = { x: corridor.width / 2, y: corridor.height / 2 };
   private targetZoom = 1;
   /** World point held under the cursor for the whole smooth zoom, the way an RTS does it. */
   private anchor?: { world: { x: number; y: number }; screen: { x: number; y: number } };
@@ -63,7 +63,7 @@ export class OfficeCamera {
     scene.events.once('shutdown', () => { window.removeEventListener('blur', leave); scene.scale.off('resize', resize); });
   }
   private get camera() { return this.scene.cameras.main; }
-  get minZoom() { return Math.min(this.camera.width / OFFICE.width, this.camera.height / OFFICE.height); }
+  get minZoom() { return Math.min(this.camera.width / corridor.width, this.camera.height / corridor.height); }
   configure(office: boolean) {
     this.active = office; this.following = false;
     this.resize();
@@ -87,7 +87,7 @@ export class OfficeCamera {
     if (!this.active) return;
     this.following = false; this.anchor = undefined;
     this.targetZoom = this.minZoom;
-    this.glide = { x: OFFICE.width / 2, y: OFFICE.height / 2 };
+    this.glide = { x: corridor.width / 2, y: corridor.height / 2 };
   }
   /** Zoom about a screen point, keeping the world under it pinned for the whole animation. */
   zoomBy(factor: number, screenX = this.camera.x + this.camera.width / 2, screenY = this.camera.y + this.camera.height / 2) {
@@ -160,8 +160,8 @@ export class OfficeCamera {
   }
   private apply() {
     const halfW = this.camera.width / this.camera.zoom / 2, halfH = this.camera.height / this.camera.zoom / 2;
-    this.center.x = halfW >= OFFICE.width / 2 ? OFFICE.width / 2 : Phaser.Math.Clamp(this.center.x, halfW, OFFICE.width - halfW);
-    this.center.y = halfH >= OFFICE.height / 2 ? OFFICE.height / 2 : Phaser.Math.Clamp(this.center.y, halfH, OFFICE.height - halfH);
+    this.center.x = halfW >= corridor.width / 2 ? corridor.width / 2 : Phaser.Math.Clamp(this.center.x, halfW, corridor.width - halfW);
+    this.center.y = halfH >= corridor.height / 2 ? corridor.height / 2 : Phaser.Math.Clamp(this.center.y, halfH, corridor.height - halfH);
     this.camera.centerOn(this.center.x, this.center.y);
   }
 }

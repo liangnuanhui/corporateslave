@@ -1,4 +1,4 @@
-import { OFFICE, OFFICE_ROOMS, OFFICE_WALLS, roomAt } from '../shared/office';
+import { corridor, CORRIDOR_ROOMS, roomAt } from '../shared/world';
 import type { OfficeScene } from './game';
 import type { CameraView } from './office-camera';
 import type { Network } from './network';
@@ -7,11 +7,11 @@ export const mapPanelMarkup = `
   <div class="map-panel" id="map-panel">
     <button class="map-heading" id="map-toggle" aria-expanded="true" aria-controls="minimap-body"><span><i></i>1F · 楼层导览</span><span id="map-toggle-label">收起 −</span></button>
     <div id="minimap-body">
-      <svg id="minimap" viewBox="0 0 ${OFFICE.width} ${OFFICE.height}" aria-label="办公室小地图，点击或拖拽移动视角" role="group">
+      <svg id="minimap" viewBox="0 0 ${corridor.width} ${corridor.height}" aria-label="办公室小地图，点击或拖拽移动视角" role="group">
         <rect x="40" y="60" width="1840" height="1080" rx="12" fill="#263830"/>
         <path d="M80 600H1840" stroke="#566954" stroke-width="120"/>
-        ${OFFICE_ROOMS.map(room => `<g data-map-room="${room.id}" tabindex="0" role="button" aria-label="查看${room.name}" class="map-room"><rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}" fill="#42574a"/><text x="${room.x + room.width / 2}" y="${room.y + room.height / 2}" text-anchor="middle" dominant-baseline="central">${room.name}</text></g>`).join('')}
-        <g fill="#85937b" pointer-events="none">${OFFICE_WALLS.map(w => `<rect x="${w.x}" y="${w.y}" width="${w.width}" height="${w.height}"/>`).join('')}</g>
+        ${CORRIDOR_ROOMS.map(room => `<g data-map-room="${room.id}" tabindex="0" role="button" aria-label="查看${room.name}" class="map-room"><rect x="${room.x}" y="${room.y}" width="${room.width}" height="${room.height}" fill="#42574a"/><text x="${room.x + room.width / 2}" y="${room.y + room.height / 2}" text-anchor="middle" dominant-baseline="central">${room.name}</text></g>`).join('')}
+        <g fill="#85937b" pointer-events="none">${corridor.walls.map(w => `<rect x="${w.x}" y="${w.y}" width="${w.width}" height="${w.height}"/>`).join('')}</g>
         <rect id="map-viewport" class="map-viewport" x="0" y="0" width="1920" height="1200"/>
         <g id="map-players" pointer-events="none"></g>
       </svg>
@@ -42,7 +42,7 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
   const minimap = get('minimap') as unknown as SVGSVGElement;
   const worldAt = (event: PointerEvent) => {
     const box = minimap.getBoundingClientRect();
-    return { x: (event.clientX - box.left) / box.width * OFFICE.width, y: (event.clientY - box.top) / box.height * OFFICE.height };
+    return { x: (event.clientX - box.left) / box.width * corridor.width, y: (event.clientY - box.top) / box.height * corridor.height };
   };
   minimap.onpointerdown = event => {
     event.preventDefault();
@@ -63,7 +63,7 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
     (get('zoom-in') as HTMLButtonElement).disabled = view.atMax;
     const x = Math.max(0, view.x), y = Math.max(0, view.y);
     const viewport = get('map-viewport');
-    for (const [key, value] of Object.entries({ x, y, width: Math.max(0, Math.min(OFFICE.width, view.x + view.width) - x), height: Math.max(0, Math.min(OFFICE.height, view.y + view.height) - y) })) viewport.setAttribute(key, String(value));
+    for (const [key, value] of Object.entries({ x, y, width: Math.max(0, Math.min(corridor.width, view.x + view.width) - x), height: Math.max(0, Math.min(corridor.height, view.y + view.height) - y) })) viewport.setAttribute(key, String(value));
   });
   network.addEventListener('snapshot', () => {
     const snapshot = network.snapshot, office = snapshot?.zone !== 'dungeon';

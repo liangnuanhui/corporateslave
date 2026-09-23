@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
 import type { Snapshot, Profile } from '../shared/game.js';
-import { OFFICE, OFFICE_ROOMS, doorway, roomAt } from '../shared/office.js';
+import { corridor, CORRIDOR_ROOMS, doorway, roomAt } from '../shared/world/index.js';
 
 const base='http://127.0.0.1:2568';
 const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
@@ -53,7 +53,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       }, 10000);
       await pause(100);
     };
-    for (const room of [...OFFICE_ROOMS].sort((a, b) => a.x - b.x)) {
+    for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room);
       await walkTo('x', door.x);
       await walkTo('y', door.y + (room.door === 'top' ? 48 : -48));
@@ -61,7 +61,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         const observer = vb.snap!.players.find(p => p.id === a.profile.id)!;
         return roomAt(myself().x, myself().y)?.id === room.id && roomAt(observer.x, observer.y)?.id === room.id;
       });
-      await walkTo('y', OFFICE.spawn.y);
+      await walkTo('y', corridor.spawnPoints[0].y);
       assert.equal(roomAt(myself().x, myself().y), undefined);
     }
     console.log('integration: six rooms entered/exited and synced to second player');
