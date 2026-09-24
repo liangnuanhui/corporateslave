@@ -9,9 +9,11 @@ const EDGE = 28;
 /** Pan speed in screen pixels per second, so panning feels the same at every zoom. */
 const EDGE_SPEED = 780;
 const ZOOM_RESPONSE = 90;
-/** The camera toolbar (`bottom:45px`, 39px tall) and the hint bar float over the stage floor.
- *  Framing an area into the band above them is the only way a room's south door stays visible. */
-const BOTTOM_UI = 86;
+/** The hint bar floats over the bottom of the stage (39-40px tall, measured). Framing an area into
+ *  the band above it is the only way a room's south door stays visible. This was 86 while the zoom
+ *  controls also floated there at bottom:45px; they now live in the map panel, and leaving the old
+ *  value reserved a second toolbar's worth of empty floor that nothing draws in. */
+const BOTTOM_UI = 44;
 
 /**
  * Age-of-Empires style floor camera over one area: the wheel zooms about the cursor, the

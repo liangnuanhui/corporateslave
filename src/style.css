@@ -29,19 +29,13 @@
 .map-caption i{width:5px;height:5px;background:#c0f3c8;border-radius:50%}
 .map-leave{width:100%;margin-top:7px;padding:7px;background:#243a2d;border:1px solid #5d7a62;border-radius:4px;color:#d6ecd0;font-size:10px}
 .map-leave:hover{background:#2f4b39}
-.camera-toolbar{position:absolute;left:50%;bottom:45px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;padding:4px 6px;border:1px solid #71836d;border-radius:5px;background:#17281fed;box-shadow:0 3px 10px #17271f22;z-index:3;white-space:nowrap}
-.camera-toolbar button{min-width:29px;min-height:29px;background:none;border:0;border-radius:3px;font-size:11px;color:#e8edd9;padding:3px 7px}
-.camera-toolbar button:hover:not(:disabled),.camera-toolbar button[aria-pressed=true]{background:#3f5945;color:#d6f8c7}
-.camera-toolbar #zoom-out,.camera-toolbar #zoom-in{font-size:19px;padding:0}
-.camera-toolbar output{font:11px monospace;color:#c5d3b7;min-width:38px;text-align:center}
-.camera-divider{height:16px;width:1px;background:#586b54;margin:0 4px}
 .stage .zone-label{right:auto;left:215px;top:28px;background:#16271fee;border-color:#5c735e}
 .stage .hud{top:14px;left:16px;transform:scale(.74);transform-origin:top left}
 .stage .stage-bottom{background:#14271eef;color:#cbd8c0}
 .stage.is-dungeon .zone-label{left:auto;right:18px;top:20px}
-@media(max-width:1150px){.map-panel{width:150px;padding:7px;right:10px;top:10px}.stage .zone-label{top:80px;left:12px}.stage .hud{transform:scale(.65);top:10px;left:12px}.camera-toolbar{bottom:39px}.camera-toolbar button{min-height:27px}.keyboard-controls{gap:14px;padding-left:18px}.keyboard-controls>span{font-size:11px}}
+@media(max-width:1150px){.map-panel{width:158px;padding:7px;right:10px;top:10px}.stage .zone-label{top:80px;left:12px}.keyboard-controls{gap:14px;padding-left:18px}.keyboard-controls>span{font-size:11px}}
 @media(max-width:850px){.map-panel{width:160px}.keyboard-controls{gap:12px}.keyboard-controls>span{font-size:10px}}
-@media(max-width:600px){.stage{aspect-ratio:3/4}.stage #game{inset:0}.stage .hud{transform:scale(.57);top:10px;left:10px}.stage .zone-label{left:10px;top:57px;font-size:9px;padding:4px 6px}.map-panel{width:125px;right:8px;top:8px;padding:6px}.map-heading{font-size:9px;padding-bottom:4px}.map-heading>span:first-child{gap:4px}#map-toggle-label{font-size:8px}.map-caption{font-size:7px}.camera-toolbar{bottom:43px;gap:2px;padding:3px 5px}.camera-toolbar button{min-width:30px;min-height:32px;padding:3px 8px;font-size:11px}.stage .stage-bottom{min-height:35px;font-size:8px}.stage .stage-bottom>span{max-width:78%}.touch-controls{gap:5px}.touch-controls button{font-size:12px;min-width:0}.stage.is-dungeon{aspect-ratio:16/10}.stage.is-dungeon .zone-label{top:10px;right:10px}}
+@media(max-width:600px){.stage{aspect-ratio:3/4}.stage #game{inset:0}.stage .hud{transform:scale(.57);top:10px;left:10px}.stage .zone-label{left:10px;top:57px;font-size:9px;padding:4px 6px}.map-panel{width:125px;right:8px;top:8px;padding:6px}.map-heading{font-size:9px;padding-bottom:4px}.map-heading>span:first-child{gap:4px}#map-toggle-label{font-size:8px}.map-caption{font-size:7px}.stage .stage-bottom{min-height:35px;font-size:8px}.stage .stage-bottom>span{max-width:78%}.touch-controls{gap:5px}.touch-controls button{font-size:12px;min-width:0}.stage.is-dungeon{aspect-ratio:16/10}.stage.is-dungeon .zone-label{top:10px;right:10px}}
 
 main{padding-top:16px}
 @media(max-width:600px){main{padding-top:12px}}
@@ -82,3 +76,49 @@ footer{padding:11px 0 13px}
 .site-dot.closed .site-dot-tag small{margin-top:2px;padding:1px 7px;border:1px solid var(--line);border-radius:20px}
 .site-map-hint{margin:28px 0 0;font-size:12px;color:var(--muted)}
 @keyframes site-pulse{0%,100%{box-shadow:0 0 0 4px #a6e8c22e}50%{box-shadow:0 0 0 9px #a6e8c214}}
+
+/* 视角控制从画面底部的浮条搬进小地图面板：它控制的就是这张图，放在一起才好找，
+   而且不再压住画面下沿那一整条。放在 #minimap-body 之外，所以收起小地图时它还在。 */
+.map-panel .camera-toolbar{margin-top:8px;padding-top:8px;border-top:1px solid #47603f;display:grid;gap:5px}
+.camera-zoom{display:flex;align-items:center;gap:4px}
+.camera-modes{display:flex;gap:5px}
+.camera-toolbar button{min-height:26px;background:#223a2b;border:1px solid #4d6a51;border-radius:3px;font-size:10px;color:#dfe9d3;padding:2px 6px}
+.camera-toolbar button:hover:not(:disabled),.camera-toolbar button[aria-pressed=true]{background:#3f5945;color:#d6f8c7}
+.camera-zoom button{width:26px;padding:0;font-size:16px;line-height:1;flex-shrink:0}
+.camera-modes button{flex:1}
+.camera-toolbar output{flex:1;font:10px monospace;color:#c5d3b7;text-align:center}
+
+/* 左上角状态块：原先整块 transform:scale(.74)，于是 9px 的「下班积分」实际只有 6.7px，
+   两行之间只剩 5px，挤成一团。改成不缩放、按真实字号排版，血条与积分各占一行。 */
+.stage .hud{transform:none;top:16px;left:16px;gap:11px;align-items:flex-start}
+.stage .hud .portrait{width:44px;height:48px;background-size:176px 176px;background-position:0 -1px}
+.stage .hud-details{display:grid;gap:7px}
+.stage .hud .health-row{gap:7px}
+.stage .hud .heart{font-size:17px;line-height:20px;text-shadow:1px 1px #412935}
+.stage .hud .health-track{height:20px;width:122px}
+.stage .hud .health-track strong{font:700 12px/16px monospace}
+.stage .hud .coins{margin-top:0;gap:7px;font-size:10px}
+.stage .hud .coins strong{font:700 15px monospace;letter-spacing:1.5px}
+.stage .hud .coin-icon{width:17px;height:17px;font-size:13px}
+@media(max-width:1150px){
+  .stage .hud{top:10px;left:12px;gap:9px}
+  .stage .hud .portrait{width:38px;height:42px;background-size:152px 152px}
+  .stage .hud .health-track{width:106px;height:18px}
+  .stage .hud .health-track strong{font:700 11px/14px monospace}
+}
+
+/* 状态块不再缩到 74%，它变宽了，原先定在 left:215px 的地点牌正好被它压住。地点牌挪到它正下方，
+   左上角就是一列：头像 / 血条 / 积分 / 我在哪。 */
+.stage .zone-label{left:16px;top:74px;right:auto}
+@media(max-width:1150px){.stage .zone-label{left:12px;top:62px}}
+@media(max-width:600px){
+  .stage .hud{top:10px;left:10px;gap:7px}
+  .stage .hud .portrait{width:32px;height:35px;background-size:128px 128px}
+  .stage .hud .health-track{width:88px;height:16px}
+  .stage .hud .health-track strong{font:700 10px/12px monospace}
+  .stage .hud .coins strong{font-size:12px}
+  .stage .zone-label{left:10px;top:52px}
+}
+/* 底板：血条和积分原本直接压在地板上，米色地板配奶油色小字，「下班积分」那行几乎读不出来。
+   和下面的地点牌同一种底，左上角读起来是一块，而不是飘在画面上的几个字。 */
+.stage .hud{background:#15271fdd;border:1px solid #5c735e;border-radius:5px;padding:8px 11px 9px 8px}

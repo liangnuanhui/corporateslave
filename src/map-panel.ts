@@ -12,10 +12,10 @@ export const mapPanelMarkup = `
       <div class="map-caption"><span><i></i>你的位置</span><span>点击 / 拖拽移视角</span></div>
       <button id="focus-exit" class="map-leave" hidden>看向出口 →</button>
     </div>
-  </div>
-  <div class="camera-toolbar" id="camera-toolbar" aria-label="地图视角控制">
-    <button id="zoom-out" aria-label="缩小视野" title="缩小">−</button><output id="zoom-level" aria-live="off">100%</output><button id="zoom-in" aria-label="放大视野" title="放大">＋</button>
-    <span class="camera-divider"></span><button id="zoom-fit">全景</button><button id="locate-player" aria-pressed="false">跟随我</button>
+    <div class="camera-toolbar" id="camera-toolbar" aria-label="地图视角控制">
+      <div class="camera-zoom"><button id="zoom-out" aria-label="缩小视野" title="缩小">−</button><output id="zoom-level" aria-live="off">100%</output><button id="zoom-in" aria-label="放大视野" title="放大">＋</button></div>
+      <div class="camera-modes"><button id="zoom-fit">全景</button><button id="locate-player" aria-pressed="false">跟随我</button></div>
+    </div>
   </div>`;
 
 const get = (id: string) => document.getElementById(id)!;
@@ -104,7 +104,7 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
   });
   network.addEventListener('snapshot', () => {
     const snapshot = network.snapshot, office = snapshot?.zone !== 'dungeon';
-    get('map-panel').hidden = !office; get('camera-toolbar').hidden = !office;
+    get('map-panel').hidden = !office; // 视角工具条是它的子元素，跟着一起藏
     document.querySelector('.stage')!.classList.toggle('is-dungeon', !office);
     const player = snapshot?.players.find(p => p.id === network.profile?.id);
     const area = AREAS[shownArea];

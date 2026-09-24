@@ -41,6 +41,12 @@ export const siteMapMarkup = `
     </div>
   </div>`;
 
+/** Which branch the player picked. The floor plan's own header names it, so it has to outlive the
+ *  overlay that chose it. Defaults to the only enterable site: skipping the screen resolves to that
+ *  same id, and a page that never shows the screen (a reload) still has to name somewhere. */
+let selected: Site = SITES.find(site => site.open) ?? SITES[0];
+export const currentSite = () => selected;
+
 /** Shown once per page load — a returning session (restore-on-load), a fresh register, and a
  *  guest login all pass through here identically (see main.ts), but replaying it on every one
  *  of those within a single tab would slow down exactly the people who reload most: whoever is
@@ -83,6 +89,7 @@ export function showSiteMap(): Promise<string> {
     // sensible destination either way, so "skip" and "pick the open site" resolve to the same id.
     const finish = (id: string) => {
       if (done) return; done = true;
+      selected = SITES.find(site => site.id === id) ?? selected;
       window.removeEventListener('keydown', skip);
       window.removeEventListener('pointerdown', skip);
       window.removeEventListener('resize', align);

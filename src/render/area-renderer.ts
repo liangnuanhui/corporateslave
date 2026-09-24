@@ -8,7 +8,15 @@ const WALL_TOP = 0x7b9084;
 const TOP: Record<Furniture['kind'], number> = { desk: 0x9d845f, table: 0x9d845f, shelf: 0xa8946c, counter: 0x9c9077, sofa: 0x6f8d7d, plant: 0x9a7455 };
 
 /** Draw one area in 3/4 oblique. Collision never sees any of this — footprints stay flat. */
-export function drawArea(scene: Phaser.Scene, area: Area) {
+/** Floor-plan text is drawn in world space, so the camera scales it — and `pixelArt: true` puts
+ *  every texture on NEAREST filtering, which turns any non-integer scale into dropped rows. At the
+ *  overview the corridor's 1824px fit into ~1330 canvas px (×0.73), which is exactly that case:
+ *  the signage came out furry. Rasterising each label at RASTER× its nominal size and letting it
+ *  sample linearly costs a few hundred KB of texture and makes every scale in between clean.
+ *  The pixel-art atlas is untouched — this is per-Text, not a global render setting. */
+const RASTER = 3;
+
+export function drawArea(scene: Phaser.Scene, area: Area, siteName: string) {
   const root = scene.add.container(0, 0);
   const floor = scene.add.graphics(); root.add(floor);
   // Phaser only depth-sorts siblings and the characters live on the scene list, so every raised
@@ -18,7 +26,8 @@ export function drawArea(scene: Phaser.Scene, area: Area) {
 
   const rect = (x: number, y: number, w: number, h: number, color: number) => { floor.fillStyle(color).fillRect(x, y, w, h); };
   const text = (x: number, y: number, value: string, size: number, color: string, bold = false, depth?: number) => {
-    const label = scene.add.text(x, y, value, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal' }).setOrigin(.5);
+    const label = scene.add.text(x, y, value, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal', resolution: RASTER }).setOrigin(.5);
+    label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     if (depth === undefined) root.add(label); else { label.setDepth(depth); raised.push(label); }
     return label;
   };
@@ -117,8 +126,7 @@ export function drawArea(scene: Phaser.Scene, area: Area) {
     rect(80, 552, 1760, 96, 0xc6cbb8);
     rect(88, 560, 1744, 80, 0xd9dec9);
     for (let x = 570; x < 1600; x += 310) text(x, 600, '›  ›  ›', 28, '#9da88e');
-    text(960, 35, '摸 鱼 科 技   /   1 F', 22, '#a6b8ae');
-    text(960, 1167, '一 层 平 面 图     ·     每 个 工 位，都 有 一 个 下 班 的 梦', 17, '#8a9c97');
+    text(960, 35, `${[...siteName].join(' ')}   /   1 F`, 22, '#a6b8ae');
     for (const room of CORRIDOR_ROOMS) {
       rect(room.x, room.y, room.width, room.height, room.color);
       for (let y = room.y + 20; y < room.y + room.height; y += 28) rect(room.x + 12, y, room.width - 24, 1, room.color - 0x090909);
@@ -131,7 +139,6 @@ export function drawArea(scene: Phaser.Scene, area: Area) {
       rect(door.x - 42, door.y - 2, 84, 4, 0xa78a51);
       text(door.x, door.y + (room.door === 'top' ? -32 : 35), room.door === 'top' ? '↓' : '↑', 21, '#6b805f');
     }
-    text(1730, 598, '电梯  E →', 21, '#526747', true);
     text(170, 598, '接待区', 18, '#728164');
   }
 

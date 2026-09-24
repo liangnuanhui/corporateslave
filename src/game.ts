@@ -3,6 +3,7 @@ import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
 import { drawArea, createOfficeAvatar } from './render/area-renderer';
+import { currentSite } from './site-map';
 import { OfficeCamera } from './office-camera';
 import { TRANSITION_TIMEOUT_MS, gateTransition, shouldStartFadeOut } from './office-transition';
 
@@ -51,7 +52,7 @@ export class OfficeScene extends Phaser.Scene {
     rects.forEach(([x,y,w,h], i) => this.textures.get('atlas').add(i, 0, x,y,w,h));
     this.background = this.add.image(0, 0, 'office').setOrigin(0).setDisplaySize(WORLD.width, WORLD.height);
     this.background.setVisible(false);
-    this.floorPlan = drawArea(this, corridor);
+    this.floorPlan = drawArea(this, corridor, currentSite().name);
     createOfficeAvatar(this);
     this.officeCamera = new OfficeCamera(this, this.blocked);
     this.officeCamera.configure(corridor);
@@ -110,7 +111,7 @@ export class OfficeScene extends Phaser.Scene {
       this.transitionPending = false; this.openingHold = false;
       this.officeMode = office; this.currentArea = area ?? this.currentArea;
       this.floorPlan?.destroy();
-      this.floorPlan = office ? drawArea(this, AREAS[this.currentArea]) : undefined;
+      this.floorPlan = office ? drawArea(this, AREAS[this.currentArea], currentSite().name) : undefined;
       this.background.setVisible(!office);
       this.officeCamera.configure(office ? AREAS[this.currentArea] : null);
       // The minimap must switch in lockstep with the camera, not with the snapshot: the snapshot's
