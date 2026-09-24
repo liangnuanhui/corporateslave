@@ -72,7 +72,10 @@ export class OfficeScene extends Phaser.Scene {
   }
   touchInput(key: keyof typeof this.touch, value: boolean) { this.touch[key] = value; if (key === 'jump' && value) this.jumpQueued = true; }
   resetInput() {
-    this.input.keyboard?.resetKeys(); this.touch = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+    // Callable before the scene has booted: window blur, visibilitychange and (now) the very first
+    // 工牌 dialog can all fire while `this.input` is still undefined. Throwing there used to surface
+    // as "服务器暂时无法连接" from main.ts's catch-all, which points at entirely the wrong thing.
+    this.input?.keyboard?.resetKeys(); this.touch = { left: false, right: false, up: false, down: false, jump: false, attack: false };
     this.jumpQueued = false; this.lastJump = false;
     this.network.input({ ...this.touch, seq: ++this.seq });
   }

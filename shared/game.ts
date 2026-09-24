@@ -10,6 +10,9 @@ export const WEAPONS = [
   { id: 'keyboard', name: '机械键盘锤', price: 60, damage: 10, frame: 14, description: '把敲键盘的力气，用在下班路上。' },
   { id: 'light', name: '准点光剑', price: 140, damage: 22, frame: 15, description: '最后一道需求，也能一剑收工。' },
 ] as const;
+/** 一个房间就是一家公司，房间里显示的就是这家公司的名字。MVP 只有一家，所以它是个常量；
+ *  真要开第二家时，这里换成随房间下发的字段，界面无需再改。 */
+export const ORG_NAME = '新阳光基金会';
 export type RoleId = typeof ROLES[number]['id'];
 export type WeaponId = typeof WEAPONS[number]['id'];
 export type Zone = 'office' | 'dungeon';

@@ -43,37 +43,22 @@
 @media(max-width:850px){.map-panel{width:160px}.keyboard-controls{gap:12px}.keyboard-controls>span{font-size:10px}}
 @media(max-width:600px){.stage{aspect-ratio:3/4}.stage #game{inset:0}.stage .hud{transform:scale(.57);top:10px;left:10px}.stage .zone-label{left:10px;top:57px;font-size:9px;padding:4px 6px}.map-panel{width:125px;right:8px;top:8px;padding:6px}.map-heading{font-size:9px;padding-bottom:4px}.map-heading>span:first-child{gap:4px}#map-toggle-label{font-size:8px}.map-caption{font-size:7px}.camera-toolbar{bottom:43px;gap:2px;padding:3px 5px}.camera-toolbar button{min-width:30px;min-height:32px;padding:3px 8px;font-size:11px}.stage .stage-bottom{min-height:35px;font-size:8px}.stage .stage-bottom>span{max-width:78%}.touch-controls{gap:5px}.touch-controls button{font-size:12px;min-width:0}.stage.is-dungeon{aspect-ratio:16/10}.stage.is-dungeon .zone-label{top:10px;right:10px}}
 
-/* 顶栏与大标题移除后，导航与连接状态移入右侧面板，让游戏画面在笔记本屏幕上一屏放得下。 */
 main{padding-top:16px}
-.mission-top{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:13px;border-bottom:1px solid var(--line);margin-bottom:13px}
-.brand.mini{font-size:16px;letter-spacing:1px;gap:8px;white-space:nowrap}
-.brand.mini svg{width:20px;height:20px}
-.mission-top .connection{margin-left:0;font-size:11px;gap:6px}
-.mission-top .connection small{margin-left:3px}
-.mission-nav{display:flex;gap:8px;margin-bottom:4px}
-.mission-nav .nav{flex:1;justify-content:center;padding:9px 6px;border:1px solid var(--line);border-radius:4px;background:#161d25;font-size:12px}
-.mission-nav .nav svg{width:15px;height:15px}
-.mission-nav .nav.active{color:var(--mint);border-color:#3f6653;background:#1b2c26}
-.mission-nav .nav.active:after{display:none}
-.mission .steps{padding-top:20px}
-@media(max-width:600px){main{padding-top:12px}.brand.mini{font-size:15px}.mission-nav .nav{font-size:11px;padding:10px 6px}}
+@media(max-width:600px){main{padding-top:12px}}
 .control-strip{margin-top:13px;padding:13px 0}
 footer{padding:11px 0 13px}
-.mission-nav{margin-bottom:14px}
-/* 在矮屏笔记本上让画面自适应收缩，而不是把页脚推到折叠线以下。 */
-@media(min-width:601px){.stage{max-height:calc(100dvh - 148px)}}
-/* 矮屏上右侧面板会成为高度瓶颈，这里收紧它的行距与名单高度。 */
-@media(min-width:601px) and (max-height:820px){
-  .mission{padding-top:16px}
-  .mission-top{padding-bottom:10px;margin-bottom:10px}
-  .mission-nav{margin-bottom:10px}
-  .steps{padding-top:12px;margin-bottom:10px}
-  .steps li{min-height:54px}
-  .steps li:not(:last-child):after{height:22px}
-  .mission>.primary{min-height:46px;font-size:15px}
-  .roster-heading{margin-top:12px;padding-top:12px}
-  .roster{min-height:38px;max-height:92px}
-}
+/* 右侧任务栏拿掉后画面独占整行：仍按 16:10 显示，但宽度要先让高度装得下，
+   否则 max-height 只会把它压成一条更扁的横幅（宽度不会跟着收）。 */
+.game-layout{display:block}
+@media(min-width:601px){.stage{max-height:calc(100dvh - 148px);width:min(100%,calc((100dvh - 148px)*1.6));margin-inline:auto}}
+/* 装备商店 / 邀请 / 音效 从右侧栏搬到画面底部这条，连接状态搬到键位说明那一行。 */
+.stage-actions{display:flex;align-items:center;gap:17px;flex-shrink:0}
+.stage-bottom>span:first-child{flex:1;min-width:0;margin-right:16px}
+.stage-actions .muted{color:#8a9a94}
+.control-strip .connection{margin-left:auto;font-size:11px}
+.control-strip .control-note{margin-left:24px}
+@media(max-width:1150px){.stage-actions{gap:12px}}
+@media(max-width:600px){.stage-actions{gap:9px}.stage-actions #invite span{display:none}}
 
 /* Opening: a full-screen overlay shown once per page load, before the game canvas means anything. */
 .site-map{position:fixed;inset:0;z-index:200;background:#11151cf5}
