@@ -15,20 +15,52 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
-## Office floor navigation — 2026-09-23
+## Office floor navigation — 2026-09-24
 
-The office starts with an overhead view of the whole floor. Six physical spaces share a central corridor: office 1, large meeting room, office 2, storage, lounge and pantry. Walk through the highlighted door openings to enter or leave; no room reload or teleport is required. All players remain in the same multiplayer session and see each other throughout the floor.
+The floor is no longer one plane. It is a corridor plus independent room interiors, each with its
+own coordinate space, and the authoritative server moves a player between them when they step on a
+door trigger.
 
-The camera is a real-time-strategy camera, in the Age of Empires / Red Alert sense: it belongs to the player's view, never to the character.
+- **Six rooms, two open.** 大会议室 and 储物间 have real interiors (1100×760, larger than their
+  footprint on the corridor plan). 办公室 1/2、休息区、茶水间 are sealed for now; stepping on their
+  threshold replies 「XX还在装修中，敬请期待」. Opening one later means supplying an interior and
+  clearing a `locked` flag — the mechanism is already there for all six.
+- **Crossing a door is a teleport between coordinate spaces**, not a walk across a continuous plane.
+  The client fades out, rebuilds the scene for the new area while the curtain is opaque, and fades
+  back in. The snapshot is authoritative throughout: if the local scene ever disagrees with it, the
+  scene is rebuilt immediately.
+- **Players see each other only within the same area.** They remain in one Colyseus session and one
+  24-player room the whole time, but the client renders only those in the area it is displaying.
+  The minimap closes that gap: a player inside a room is projected onto that room's footprint on the
+  floor plan, so the corridor overview still shows who is where.
+- **New arrivals are scattered** at random across the open areas rather than queuing at reception.
+- **Controls.** WASD *and* the arrow keys move the character, in both the office and the dungeon.
+  The camera is panned with the mouse only — drag, or push the cursor against the edge of the view.
+  The wheel zooms about the cursor, keeping the world point under the pointer pinned for the whole
+  smooth zoom. − / ＋ zoom about the viewport centre; 全景 resets; 跟随我 toggles following and now
+  survives crossing a door.
+- **The opening.** A stylised map of the company's sites, then the floor, then a push into whichever
+  area the player spawned in. Any key or click skips the whole sequence at any stage. A
+  `?zone=dungeon` invite link goes straight to the dungeon without it.
+- In 储物间, press E to open the equipment shop — the shop is refused anywhere else. At the
+  far-right end of the corridor, press E to enter the dungeon.
+- The dungeon keeps its original combat, controls and rewards; none of the area work touches it.
 
-- Move the character with WASD or the mobile direction buttons. Diagonal movement has the same speed as movement along one axis. Arrow keys no longer move the character on the office floor — they pan the camera.
-- The wheel zooms about the cursor: the world point under the pointer stays under the pointer for the whole smooth zoom, from the floor overview (fit to the stage) down to a single desk at 5x. − / ＋ zoom about the viewport centre; mobile pinch zooms about the pinch centre.
-- Pan by dragging, with the arrow keys, or by pushing the cursor against the edge of the view. Pan speed is expressed in screen pixels, so it feels the same at every zoom.
-- The minimap floats over the floor, which fills the whole stage. It marks players, the current space and the camera viewport; click or drag anywhere on it to send the camera there, or click a room to frame that room. The map can be collapsed.
-- “全景” resets the camera; “跟随我” toggles following the character. Zooming, panning or choosing another room stops following.
-- In storage, press E to open the equipment shop. At the far-right end of the corridor, press E to enter the dungeon. The existing navigation buttons remain available.
-- The dungeon keeps its original combat controls and rewards; returning to the office resets to the overhead overview.
+**PC only.** Existing touch controls and pinch zoom are left in the tree but are unsupported and
+unmaintained.
 
-`shared/office.ts` is the single floor-plan definition for rendered rooms, furniture, wall collisions, minimap layout and location names. Only the server applies movement. The client camera never changes actor coordinates. `src/office-map.ts`, `src/office-camera.ts` and `src/map-panel.ts` separate drawing, camera control and fixed navigation UI.
+`shared/world/` is the single floor-plan definition — `types.ts`, one file per area, and `index.ts`
+as the barrel holding the area registry, collision (`canStandAt`, `moveIn`), exits (`exitAt`) and
+the room-to-floor projection (`projectTo`). Render heights live there too, under one cap, so the
+assertion that nothing is tall enough to hide a character can cover every lifted solid rather than
+furniture alone. Only the server applies movement; the client camera never changes actor
+coordinates. `src/render/` holds the 3/4 oblique drawing, `src/office-camera.ts` the camera,
+`src/map-panel.ts` and `src/minimap.ts` the navigation UI.
 
-Validation: `npm run build`, `npm test` (including every doorway, wall/furniture collision, normalized diagonal movement, two-player room transitions, and the existing combat/economy/persistence tests). Browser QA covers full-floor and desk views, room entry/exit, cursor-anchored wheel zoom from the overview into a corner room, arrow-key and edge-scroll panning, drag, minimap focus and drag, following, dungeon return, responsive layout, pinch zoom and mobile movement.
+Validation: `npm run build`, `npm test`. The suite covers area collision and diagonal normalisation,
+every doorway in both directions against a live server, locked-door notices naming the room, the
+`transition` message's payload, reconnect preserving both area and room-local position, exit-trigger
+bounce protection, spawn-point reachability by flood fill, the render-height cap, the oblique face
+geometry, the transition gate, and minimap dot projection — plus the existing combat, economy and
+persistence tests. Browser QA covers the opening and its skip, room entry and exit, occlusion around
+furniture, cursor-anchored zoom, edge-scroll panning, minimap switching and the dungeon round trip.
