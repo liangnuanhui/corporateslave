@@ -15,6 +15,26 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
+## 画面尺寸不再做任何算术 — 2026-09-24
+
+同一个问题错了三次，每次换一种算法，每次都还是错：
+
+1. `calc(100dvh - 148px)`——148 是量出来的「页面其余部分有多高」，换台机器就不一定对；
+2. `min(100%, 100cqh * 1.6)`——要浏览器支持容器查询单位，不支持则整条声明作废；
+3. `display:grid` 让早该删除的两栏 template 复活，替一个不存在的面板留出一整列。
+
+共同点不是这三个写法各自有 bug，而是**画面的尺寸依赖了「别处有多高/多宽」这个信息**，
+而那个信息可能取不到、可能过期、可能被另一条规则改掉。
+
+现在不依赖任何东西：`main` 撑满一屏，操作条和页脚各占自己那点，**剩下的整块都是画面**
+（宽 100%、高 100%）。既不会溢出，也不会偏，因为它就是「剩下的那块」。
+
+代价：画面不再固定 16:10，形状随窗口变。相机本来就按区域自适应，任何形状都能框。
+要找回固定比例，先回答一个问题：比例算错时页脚会不会被顶出屏幕——前三次都栽在这里。
+
+实测 168 组（12 种宽 × 7 种高 × dpr 1/2）：画面中心与窗口中心偏差 0，左右留白相等，
+纵向溢出 0，操作条与页脚始终完整在屏内。
+
 ## 删掉的面板留下的列 — 2026-09-24
 
 画面整体偏左、右侧空一大条，原因是 `.game-layout` 上那条两栏规则还活着：
