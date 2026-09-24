@@ -15,6 +15,23 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
+## 页面高度不再靠算 — 2026-09-24
+
+画面独占整行之后，它的高度一度写成 `calc(100dvh - 148px)`，148 是量出来的「页面其余部分」
+的高度。这个数只要有一点对不上，页脚和操作条就被顶到折叠线以下，而页面本身看不出任何异常。
+对不上的方式很多：字体不同导致行高变化、浏览器设了最小字号、或者浏览器不认 `dvh` ——
+后者最狠，整条声明作废，画面直接按整行宽度算高度，页面能长到视口的 1.5 倍。
+
+现在 `main` 是一列 flex、高一屏，操作条与页脚各占自己那点，剩下多少给画面就是多少。
+16:10 用容器查询单位表达（`width: min(100%, 100cqh * 1.6)`），同样不需要知道别人有多高。
+两层退化都是安全的：不认 `cqh` 就退回「撑满可用空间、比例随之变化」，不认 `dvh` 就退回
+`100vh`，两种情况下页脚都仍在屏幕内。
+
+规则：**布局里不要出现「我量出来别人有多高」的常数。** 这种数在写下的那一刻是对的，
+在别人的机器上不一定对，而且错了的样子是「看起来很正常，只是底下没了」。
+
+实测 90 组窗口尺寸（宽 560–2560 × 高 480–1200）：纵向溢出 0，页脚底边始终 ≤ 视口高度。
+
 ## 画面按设备分辨率渲染 — 2026-09-24
 
 Phaser 的 RESIZE 缩放模式按 CSS 像素给画布分配绘制缓冲，并且在这个模式下直接忽略 `zoom`

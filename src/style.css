@@ -41,10 +41,17 @@ main{padding-top:16px}
 @media(max-width:600px){main{padding-top:12px}}
 .control-strip{margin-top:13px;padding:13px 0}
 footer{padding:11px 0 13px}
-/* 右侧任务栏拿掉后画面独占整行：仍按 16:10 显示，但宽度要先让高度装得下，
-   否则 max-height 只会把它压成一条更扁的横幅（宽度不会跟着收）。 */
-.game-layout{display:block}
-@media(min-width:601px){.stage{max-height:calc(100dvh - 148px);width:min(100%,calc((100dvh - 148px)*1.6));margin-inline:auto}}
+/* 右侧任务栏拿掉后画面独占整行。高度不靠算：main 撑满一屏，操作条和页脚各占自己那点，
+   剩下多少给画面就是多少。之前这里写的是 calc(100dvh - 148px)——148 是我量出来的页面
+   其余部分的高度，只要实际比它高一点（字体换了、行高变了、dvh 不被支持导致整条声明作废），
+   页脚就会被顶到折叠线以下，而页面本身看起来完全正常。不留这种需要猜对的数。 */
+main{display:flex;flex-direction:column;height:100vh;height:100dvh;padding-bottom:0}
+/* container-type:size 让 100cqh 表示「剩给画面的高度」，于是 16:10 这个比例可以直接用剩余
+   空间表达，不用再去算页面其余部分有多高。万一浏览器不认 cqh，width 那条声明整条作废，
+   画面退回「撑满可用空间、比例随之变化」——依然不会溢出，只是不再是 16:10。 */
+.game-layout{flex:1 1 auto;min-height:0;display:grid;place-items:center;container-type:size}
+.control-strip,footer,.touch-controls{flex:0 0 auto}
+.stage{width:min(100%,calc(100cqh * 1.6));height:auto;max-width:100%;max-height:100%;margin-inline:auto;align-self:center}
 /* 装备商店 / 邀请 / 音效 从右侧栏搬到画面底部这条，连接状态搬到键位说明那一行。 */
 .stage-actions{display:flex;align-items:center;gap:17px;flex-shrink:0}
 .stage-bottom>span:first-child{flex:1;min-width:0;margin-right:16px}
