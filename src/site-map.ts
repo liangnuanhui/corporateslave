@@ -8,8 +8,13 @@ export const siteMapMarkup = `
       <p class="site-map-eyebrow">摸鱼科技 · 全国网点</p>
       <h1 class="site-map-title">今天，去哪儿摸鱼？</h1>
       <div class="site-map-stage">
-        <svg class="site-map-outline" viewBox="0 0 100 82" preserveAspectRatio="none" aria-hidden="true">
-          <path d="M48,3 C63,2 76,9 81,21 C90,27 91,41 83,49 C89,60 80,72 66,75 C63,85 45,87 37,79 C23,81 11,70 14,56 C4,50 6,35 17,27 C15,15 30,4 44,7 C45,5 46,4 48,3 Z"/>
+        <svg class="site-map-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <!-- A rough, asymmetric silhouette — not real geography, but with the landmarks (Bohai
+               notch, Shandong's jut, the northeast ear, the Pearl/Yangtze delta bulges, the
+               south-west taper, Hainan and Taiwan) that make it read as China at a glance. -->
+          <path d="M68,4 L88,10 L82,17 L86,20 L70,23 L78,27 L94,30 L80,34 L86,42 L74,50 L80,55 L70,64 L78,72 L62,80 L46,88 L28,82 L16,68 L6,48 L10,28 L24,10 L46,3 L58,2 Z"/>
+          <ellipse cx="54" cy="90" rx="4.5" ry="3.4"/>
+          <ellipse cx="87" cy="59" rx="2.6" ry="5.4" transform="rotate(18 87 59)"/>
         </svg>
         ${SITES.map(marker).join('')}
       </div>

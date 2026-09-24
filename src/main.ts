@@ -73,7 +73,17 @@ function initialJoin() {
 // The very first thing anyone sees, on every path in: a returning session, a fresh register, and
 // 快速试玩 all look identical — the national map, then the floor overview, then the push into
 // wherever the server actually spawned us. showSiteMap() only shows once per page load on its own.
-async function openingSequence() { await showSiteMap(); await initialJoin(); await scene.playOpening(); }
+// One skip flag spans the whole sequence (map -> the initialJoin() network round trip -> the
+// floor hold): a press during the map still ends the map via its own listener, but it also marks
+// `skipped` so playOpening() — entered only after the join round trip — knows to end immediately
+// instead of waiting out its own 1.5s, rather than requiring a second press to get past the join gap.
+async function openingSequence() {
+  let skipped = false;
+  const skip = () => { skipped = true; };
+  window.addEventListener('keydown', skip); window.addEventListener('pointerdown', skip);
+  try { await showSiteMap(); await initialJoin(); await scene.playOpening(() => skipped); }
+  finally { window.removeEventListener('keydown', skip); window.removeEventListener('pointerdown', skip); }
+}
 function interact() {
   if (!network.profile) { show(authDialog); return; }
   const actor = network.snapshot?.players.find(p=>p.id===network.profile!.id);

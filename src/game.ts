@@ -195,13 +195,17 @@ export class OfficeScene extends Phaser.Scene {
    *  `gateTransition`), just tagged `openingHold` so the cut branch pushes the camera in on us
    *  instead of playing the door's fade cosmetic. No second decision path, no second write to
    *  `currentArea`. Any key or click fast-forwards the deadline, which the gate already treats
-   *  as "overdue" — the same code that ends the hold on time ends it on skip. */
-  playOpening() {
+   *  as "overdue" — the same code that ends the hold on time ends it on skip.
+   *  `skipped` covers a press that landed *before* this call — during the map, or during the
+   *  initialJoin() network round trip main.ts awaits before calling this — since neither of those
+   *  stages has this method's own listeners yet. Checked once, at entry, is enough: a press during
+   *  the hold itself is still caught live by the listeners registered below. */
+  playOpening(skipped?: () => boolean) {
     if (this.transitionPending) return Promise.resolve(); // a real door transition is already in flight
     this.officeCamera.configure(AREAS.corridor);
     this.openingHold = true;
     this.transitionPending = true;
-    this.transitionDeadline = this.time.now + 1500;
+    this.transitionDeadline = skipped?.() ? this.time.now : this.time.now + 1500;
     return new Promise<void>(resolve => {
       this.openingResolve = resolve;
       this.openingSkip = () => { this.transitionDeadline = this.time.now; };
@@ -227,11 +231,16 @@ export class OfficeScene extends Phaser.Scene {
   /** Presentation only — the server already moved us; update()'s authority rule does the actual
    *  rebuild. This just earns it a dark screen to cut behind, and announces the room once it's dark. */
   private playTransition(name: string) {
-    // A second `transition` while one is already pending (quick in-and-out through a door) must not
-    // restart the fade — Fade.start() would reset it to transparent and flash the stale scene.
-    if (shouldStartFadeOut(this.transitionPending)) this.cameras.main.fadeOut(180, 0x0b, 0x11, 0x16);
-    this.transitionPending = true;
-    this.transitionDeadline = this.time.now + TRANSITION_TIMEOUT_MS;
+    // Input isn't blocked during the opening, so a player can walk through a door mid-hold. Its
+    // own (longer) deadline already governs when the cut lands — on whatever area they're in by
+    // then, door crossing included — so a door's short timeout must not overwrite and truncate it.
+    if (!this.openingHold) {
+      // A second `transition` while one is already pending (quick in-and-out through a door) must not
+      // restart the fade — Fade.start() would reset it to transparent and flash the stale scene.
+      if (shouldStartFadeOut(this.transitionPending)) this.cameras.main.fadeOut(180, 0x0b, 0x11, 0x16);
+      this.transitionPending = true;
+      this.transitionDeadline = this.time.now + TRANSITION_TIMEOUT_MS;
+    }
     this.network.emit('notice', `进入${name}`);
   }
   private hit(data: { x: number; y: number; damage: number; id: string }) {
