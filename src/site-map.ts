@@ -56,20 +56,23 @@ export function showSiteMap(): Promise<string> {
     const overlay = host.firstElementChild as HTMLElement;
     const card = overlay.querySelector<HTMLElement>('.site-map-card')!;
     // The overlay is the doorway into the game picture (`.stage`), not the whole page — it should
-    // centre on that, not on the viewport, or the visual weight jumps sideways the instant it
-    // closes (`.stage` sits left of centre because the fixed-width 下班计划 panel shares the row).
-    // Measured live, not hardcoded: `.stage` is a grid item whose width — and so whose centre —
-    // depends on the viewport and on `main`'s own max-width.
+    // centre on that on BOTH axes, or the visual weight jumps the instant it closes. Horizontally
+    // `.stage` sits left of centre because the fixed-width 下班计划 panel shares its row; vertically
+    // it sits high because the control strip and footer occupy the page below it. Centring on the
+    // viewport instead left the card 58–130px low and always overlapping the stage's bottom edge.
+    // Measured live, not hardcoded: `.stage` is a grid item whose size and centre both depend on
+    // the viewport and on `main`'s own max-width.
     const align = () => {
       const stage = document.querySelector('.stage');
       if (!stage) return;
-      const target = stage.getBoundingClientRect().left + stage.getBoundingClientRect().width / 2;
+      const box = stage.getBoundingClientRect(), rect = card.getBoundingClientRect(), margin = 16;
       // Below the layout's two-column breakpoint (~851–950px window width) the mission panel still
-      // sits beside a now-narrow stage, pushing its centre far enough left that a stage-centred card
-      // would clip past the viewport's own left edge. Clamp to keep it on-screen there; every width
-      // this project treats as a real desktop target leaves the target well inside these bounds.
-      const half = card.getBoundingClientRect().width / 2, margin = 16;
-      card.style.left = `${Math.min(Math.max(target, half + margin), window.innerWidth - half - margin)}px`;
+      // sits beside a now-narrow stage, pushing its centre far enough that a stage-centred card
+      // would clip past the viewport's own edge. Clamp to keep it on-screen there; every size this
+      // project treats as a real desktop target leaves the target well inside these bounds.
+      const place = (target: number, half: number, limit: number) => Math.min(Math.max(target, half + margin), limit - half - margin);
+      card.style.left = `${place(box.left + box.width / 2, rect.width / 2, window.innerWidth)}px`;
+      card.style.top = `${place(box.top + box.height / 2, rect.height / 2, window.innerHeight)}px`;
     };
     document.body.appendChild(overlay);
     align();
