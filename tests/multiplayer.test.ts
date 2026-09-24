@@ -5,12 +5,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
-import type { Snapshot, Profile } from '../shared/game.js';
-import { AREAS, corridor, CORRIDOR_ROOMS, doorway, roomAt } from '../shared/world/index.js';
+import { NPC, damageFor, type Snapshot, type Profile } from '../shared/game.js';
+import { AREAS, corridor, CORRIDOR_ROOMS, canStandAt, doorway, exitAt, roomAt } from '../shared/world/index.js';
 
 const base='http://127.0.0.1:2568';
 const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
-async function until(fn:()=>boolean|Promise<boolean>, ms=8000) { const deadline=Date.now()+ms; while(Date.now()<deadline){if(await fn())return;await pause(40);} throw new Error('Condition timed out'); }
+// `what` is not decoration: this file has ~30 until() calls and a bare "Condition timed out"
+// names none of them, so a flaky run tells you nothing about which step gave up.
+async function until(fn:()=>boolean|Promise<boolean>, ms=8000, what='') { const deadline=Date.now()+ms; while(Date.now()<deadline){if(await fn())return;await pause(40);} throw new Error(`Condition timed out after ${ms}ms${what?`: ${what}`:''}`); }
 async function start(data:string) {
   const child=spawn(process.execPath,['--import','tsx','server/index.ts'],{env:{...process.env,PORT:'2568',DATA_DIR:data,DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
   let logs=''; child.stdout?.on('data',d=>logs+=d);child.stderr?.on('data',d=>logs+=d);
@@ -20,9 +22,9 @@ async function start(data:string) {
 async function stop(child:ChildProcess){if(child.exitCode!==null)return; const closed=new Promise<void>(r=>child.once('exit',()=>r())); child.kill('SIGTERM');await closed;}
 async function leave(room:Room){if(room.connection.isOpen)await room.leave();}
 async function register(username:string){ const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:'mvp-test-password',name:username,role:'rookie'})});assert.equal(r.status,200);return r.json() as Promise<{token:string;profile:Profile}>; }
-function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string}}={};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;});room.send('sync');return value;}
+function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string};hits:{id:string;damage:number}[]}={hits:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);});room.send('sync');return value;}
 
-test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:90000}, async()=>{
+test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:150000}, async()=>{
   const data=await mkdtemp(join(tmpdir(),'niuma-test-'));let server=await start(data);const rooms:Room[]=[];
   try {
     console.log('integration: server started');
@@ -46,6 +48,19 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     const cheated = va.snap!.players.find(p=>p.id===a.profile.id)!;
     assert.ok(cheated.x<AREAS[cheated.area].width);
     console.log(`integration: player A spawned in ${cheated.area}`); // random spawn (Task 4) — visible proof this varies run to run
+    // 办公室里那位可打的同事：这段验的是服务器真的把他放进了房间，而且放的位置合法。
+    // placeColleague() 每次重抽，单测只能证明抽点函数本身对，证明不了服务器用对了它。
+    const npc = va.snap!.enemies.find(e => e.id === NPC.id);
+    assert.ok(npc, `办公室里应该有 ${NPC.name}`);
+    assert.equal(npc!.name, NPC.name);
+    assert.ok(AREAS[npc!.area], `${NPC.name} 的 area「${npc!.area}」不是真实存在的区域`);
+    assert.ok(canStandAt(AREAS[npc!.area], npc!.x, npc!.y), `${NPC.name} 被放在了站不住的位置`);
+    assert.equal(exitAt(AREAS[npc!.area], npc!.x, npc!.y), undefined, `${NPC.name} 被放在门口触发器上`);
+    assert.ok(npc!.hp === npc!.maxHp && npc!.hp >= NPC.hpMin && npc!.hp <= NPC.hpMax, `${NPC.name} 的血量 ${npc!.hp} 不在 ${NPC.hpMin}-${NPC.hpMax} 之间`);
+    assert.equal(npc!.hp % NPC.hpStep, 0);
+    // 两个客户端看到的必须是同一个他——他是房间的状态，不是各自本地生成的。
+    await until(() => vb.snap!.enemies.some(e => e.id === NPC.id && e.hp === npc!.hp && e.area === npc!.area));
+    console.log(`integration: ${NPC.name} 出现在 ${AREAS[npc!.area].name}，${npc!.hp} 血`);
     let officeSeq = 15;
     const myself = () => va.snap!.players.find(p => p.id === a.profile.id)!;
     // Read through a function (not `va.transition` directly) — TS narrows a property right after
@@ -58,7 +73,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         if (Math.abs(distance) < 16) { ra.send('input', { seq: ++officeSeq }); return true; }
         ra.send('input', { left: axis === 'x' && distance < 0, right: axis === 'x' && distance > 0, up: axis === 'y' && distance < 0, down: axis === 'y' && distance > 0, seq: ++officeSeq });
         return false;
-      }, 10000);
+      }, 10000, `走到 ${axis}=${target}`);
       await pause(100);
     };
     // The server now actually switches `area` at the door (Task 3), so a player walking into
@@ -103,7 +118,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       if (open) {
         // Falsifiable by: tryExit never firing (area stays 'corridor'), or firing into the wrong
         // area (exit.to / AREAS lookup wrong), or the exit.at landing point being unreachable.
-        await until(() => myself().area === room.id, 10000);
+        await until(() => myself().area === room.id, 10000, `进入${room.name}`);
         assertAgree();
         // Falsifiable by: a renamed field, an id sent in place of the display name (both would
         // desync `to`/`name` from the room's actual id/name), or the message going to the wrong
@@ -116,7 +131,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         // the room's own 26px-tall trigger band without ever actually entering it.
         const outward = room.id === 'storage' ? { up: true } : { down: true };
         for (let i = 0; i < 30; i++) { ra.send('input', { ...outward, seq: ++officeSeq }); await pause(34); }
-        await until(() => myself().area === 'corridor', 10000);
+        await until(() => myself().area === 'corridor', 10000, `离开${room.name}`);
         assertAgree();
         console.log(`integration: left ${room.name} back to corridor`);
       } else {
@@ -133,6 +148,61 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       await walkTo('y', corridor.spawnPoints[0].y);
     }
     console.log('integration: six rooms entered/exited and synced to second player');
+    // 打人这条链路的端到端验证：客户端发 attack → 服务器扣血 → 广播 hit → 两个客户端都看到。
+    // 单测只证明了 meleeHits/inMelee 本身对，证明不了这条链路接上了。
+    {
+      const target = () => va.snap!.enemies.find(e => e.id === NPC.id)!;
+      const home = target().area;
+      await returnToCorridor();
+      if (home !== 'corridor') {
+        const slot = CORRIDOR_ROOMS.find(r => r.id === home)!;
+        const door = doorway(slot), fromAbove = slot.door === 'top';
+        await walkTo('x', door.x);
+        await walkTo('y', door.y + (fromAbove ? -60 : 60));
+        for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
+        await until(() => myself().area === home, 10000);
+      }
+      await walkTo('x', target().x - 34);
+      await walkTo('y', target().y);
+      // 先往右轻推几帧：既走近，也把 face 定成 +1。俯视的 face 只有左右两个值，站在他左边
+      // 朝右才算面对他——不推这几帧，最后一次移动是纵向的，face 还停在上一次横向的方向上。
+      for (let i = 0; i < 3; i++) { ra.send('input', { right: true, seq: ++officeSeq }); await pause(34); }
+      const expected = damageFor(a.profile.role, a.profile.weapon);
+      const startHp = target().hp;
+      va.hits.length = 0; vb.hits.length = 0; va.notice = undefined;
+      // 每次挥击前先补上距离——击退会把他推开，真人也是边打边跟上去的。
+      const swing = async () => {
+        const dx = target().x - myself().x, dy = target().y - myself().y;
+        if (Math.hypot(dx, dy) > 24) for (let i = 0; i < 3; i++) {
+          ra.send('input', { right: dx > 8, left: dx < -8, down: dy > 8, up: dy < -8, seq: ++officeSeq }); await pause(34);
+        }
+        ra.send('input', { attack: true, seq: ++officeSeq }); await pause(60);
+        ra.send('input', { seq: ++officeSeq }); await pause(560);
+      };
+      await swing();
+      assert.equal(target().hp, startHp - expected, `一击应该扣 ${expected} 点血`);
+      assert.ok(va.hits.some(h => h.id === NPC.id && h.damage === expected), '攻击者应该收到 hit 广播');
+      await until(() => vb.snap!.enemies.find(e => e.id === NPC.id)!.hp === startHp - expected);
+      assert.ok(vb.hits.some(h => h.id === NPC.id), '同房间的另一个客户端也要收到 hit 广播');
+      console.log(`integration: 一击 ${expected} 点，${NPC.name} 剩 ${target().hp}/${target().maxHp}`);
+      // 打到躺平，验证死亡提示与重新出现时的重新抽取。
+      for (let i = 0; i < 40 && target().hp > 0; i++) await swing();
+      assert.equal(target().hp, 0, `${NPC.name} 应该被打倒`);
+      await until(() => !!va.notice && va.notice.includes(NPC.name), 4000);
+      assert.ok(va.notice!.includes('躺平'), `倒下时应该有提示 (got: ${va.notice})`);
+      const downed = { area: target().area, x: target().x, y: target().y };
+      await until(() => target().hp > 0, NPC.respawnMs + 6000);
+      const back = target();
+      assert.ok(back.hp === back.maxHp && back.hp >= NPC.hpMin && back.hp <= NPC.hpMax, `重新出现时血量 ${back.hp} 越界`);
+      assert.ok(canStandAt(AREAS[back.area], back.x, back.y), '重新出现的位置站不住');
+      assert.equal(exitAt(AREAS[back.area], back.x, back.y), undefined, '重新出现的位置压在门口触发器上');
+      assert.ok(back.area !== downed.area || back.x !== downed.x || back.y !== downed.y, '重新出现时位置没有重新抽过');
+      console.log(`integration: ${NPC.name} 在 ${AREAS[back.area].name} 重新上班，${back.hp} 血`);
+      // 这一段打完人可能停在任意一个房间里，而后面每一段都假设「人在走廊、用走廊坐标」。
+      // 不还原这个前提，后面的 walkTo 会拿走廊坐标去房间的坐标系里走，看起来还一路“成功”。
+      await returnToCorridor();
+      await walkTo('y', corridor.spawnPoints[0].y);
+    }
     // spec: 断线 12 秒内重连回到原 area 原位置. Walk into 大会议室, force a drop, reconnect, and
     // confirm the player is still in area 'meeting' at (nearly) the same room-local position —
     // this has no other coverage (the disk-recovery check further below only reads back profile
@@ -196,7 +266,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
           if (Math.abs(distance) < 16) { office.send('input', { seq: ++oSeq }); return true; }
           office.send('input', { left: axis === 'x' && distance < 0, right: axis === 'x' && distance > 0, up: axis === 'y' && distance < 0, down: axis === 'y' && distance > 0, seq: ++oSeq });
           return false;
-        }, 10000);
+        }, 10000, `重新加入后走到 ${axis}=${target}`);
         await pause(100);
       };
       if (oMe().area !== 'storage') {
@@ -216,7 +286,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         await oWalkTo('x', storageDoor.x);
         await oWalkTo('y', storageDoor.y - 60);
         for (let i = 0; i < 20; i++) { office.send('input', { down: true, seq: ++oSeq }); await pause(34); }
-        await until(() => oMe().area === 'storage', 10000);
+        await until(() => oMe().area === 'storage', 10000, '重新加入后进入储物间');
       }
     }
     office.send('shop',{weapon:'keyboard'});await until(()=>vo.profile?.weapon==='keyboard');

@@ -157,10 +157,13 @@ export class OfficeScene extends Phaser.Scene {
     this.background.setTint(snap.zone === 'dungeon' ? 0xb2a5d5 : 0xffffff);
     // Another area is another room: its players are not drawn at all, and their visuals go away.
     const visible = office ? snap.players.filter(p => p.area === this.currentArea) : snap.players;
-    const ids = new Set([...visible.map(p=>p.id), ...snap.enemies.map(e=>e.id)]);
+    // 目标和玩家一样按区域过滤：它在别的房间时不该画出来，视觉对象也要跟着销毁，
+    // 否则它会以上一个房间的坐标留在这一间的地板上。
+    const targets = office ? snap.enemies.filter(e => e.area === this.currentArea) : snap.enemies;
+    const ids = new Set([...visible.map(p=>p.id), ...targets.map(e=>e.id)]);
     for (const [id, v] of this.visuals) if (!ids.has(id)) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); this.visuals.delete(id); }
     for (const player of visible) this.renderActor(player, false, time, delta);
-    for (const enemy of snap.enemies) this.renderActor(enemy, true, time, delta);
+    for (const enemy of targets) this.renderActor(enemy, true, time, delta);
   }
   private renderActor(actor: Actor | Enemy, enemy: boolean, time: number, delta: number) {
     let v = this.visuals.get(actor.id);
@@ -185,13 +188,21 @@ export class OfficeScene extends Phaser.Scene {
     if (!office) v.sprite.setFrame(frame);
     v.sprite.setDisplaySize(width, height).setFlipX(enemy ? actor.face > 0 : actor.face < 0).setAlpha(actor.hp === 0 ? .4 : 1);
     const role = 'role' in actor ? actor.role : '';
-    v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
+    // 办公室里目标和玩家用同一张贴图（他就是个同事），所以给他一层暖色，一眼能分出不是自己人。
+    v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : enemy && office ? 0xf0c49c : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
     // Oblique depth: whoever stands lower on the floor is in front. Labels never take part.
     const depth = office ? v.sprite.y + 12 : 20;
     v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000);
-    v.label.setText(actor.name + (my ? ' · 你' : '') + (!actor.hp && !enemy ? ' · 休息中' : '')).setPosition(v.sprite.x, v.sprite.y - (office ? 26 : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
+    v.label.setText(actor.name + (my ? ' · 你' : '') + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? 26 : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
     v.health.clear();
-    if (enemy && actor.hp > 0) { v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32,v.sprite.y-height-9,64,5); v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32,v.sprite.y-height-9,64*actor.hp/(actor as Enemy).maxHp,5); }
+    // 俯视时精灵是中心对齐的（origin .5/.5），侧视是底部对齐，血条的基准线因此不同。
+    if (enemy && actor.hp > 0) {
+      // 名牌在俯视下贴在 y-26（origin .5/1，所以它向上长），血条必须再往上让开整个名牌，
+      // 否则两者深度相同、正好互相盖住——第一次就是这样，屏幕上根本看不到血条。
+      const barY = office ? v.sprite.y - 52 : v.sprite.y - height - 9;
+      v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32, barY, 64, 5);
+      v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32, barY, 64*actor.hp/(actor as Enemy).maxHp, 5);
+    }
     v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
   }
   /** Opening: hold the whole floor for a beat, then push into wherever the server spawned us.

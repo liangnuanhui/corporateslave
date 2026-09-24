@@ -24,9 +24,9 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       ${mapPanelMarkup}
       <div class="hud"><div class="portrait"></div><div class="hud-details"><div class="health-row"><span class="heart">♥</span><div class="health-track"><div id="health-fill"></div><strong id="health-label">100 / 100</strong></div></div><div class="coins"><span class="coin-icon">₵</span><strong id="coins">—</strong><span>下班积分</span></div></div></div>
       <div class="stage-message" id="stage-message" hidden></div>
-      <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><div class="stage-actions"><button id="nav-shop" aria-label="装备商店">${icon('bag')}<span>装备商店</span></button><button id="invite" aria-label="复制邀请链接">${icon('share')}<span>邀请同事</span></button><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div></div>
+      <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · J 攻击 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><div class="stage-actions"><button id="nav-shop" aria-label="装备商店">${icon('bag')}<span>装备商店</span></button><button id="invite" aria-label="复制邀请链接">${icon('share')}<span>邀请同事</span></button><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div></div>
     </section></div>
-    <section class="control-strip" aria-label="操作说明"><button id="profile-button" class="identity"><div class="portrait small"></div><span><strong id="player-name">你的工位，已预留</strong><small id="player-role">创建一个虚构角色，开始冒险</small></span></button><div class="keyboard-controls"><span><kbd class="wide">WASD</kbd>/<kbd>方向键</kbd>移动</span><span>滚轮缩放 · 拖拽移视角</span><span><kbd>E</kbd>互动</span></div><button id="connection" class="connection"><i></i><span>尚未连接</span><small id="ping">—</small></button><span class="control-note">生死看淡，不服就干</span></section>
+    <section class="control-strip" aria-label="操作说明"><button id="profile-button" class="identity"><div class="portrait small"></div><span><strong id="player-name">你的工位，已预留</strong><small id="player-role">创建一个虚构角色，开始冒险</small></span></button><div class="keyboard-controls"><span><kbd class="wide">WASD</kbd>/<kbd>方向键</kbd>移动</span><span>滚轮缩放 · 拖拽移视角</span><span><kbd>J</kbd>攻击</span><span><kbd>E</kbd>互动</span></div><button id="connection" class="connection"><i></i><span>尚未连接</span><small id="ping">—</small></button><span class="control-note">生死看淡，不服就干</span></section>
     <div class="touch-controls" aria-label="触屏操作"><button data-touch="left" aria-label="向左移动">←</button><button data-touch="right" aria-label="向右移动">→</button><button data-touch="up" aria-label="向上移动">↑</button><button data-touch="down" aria-label="向下移动">↓</button><button data-touch="jump" id="touch-jump" hidden>跳跃</button><button data-touch="attack">攻击</button><button id="touch-interact">互动</button></div>
     <footer><span>本故事纯属虚构，如有雷同，应该是人生。</span><span>多人体验版 <span class="footer-dot">·</span> MVP 0.1</span></footer>
   </main>
@@ -75,7 +75,7 @@ function interact() {
   if (!network.profile) { show(authDialog); return; }
   const actor = network.snapshot?.players.find(p=>p.id===network.profile!.id);
   if (actor && actor.area === 'storage') openShop();
-  else toast('沿走廊从门口进出房间；走到储物间的装备台前按 E，可以挑装备。');
+  else toast('沿走廊从门口进出房间；走到储物间的装备台前按 E 挑装备；靠近同事按 J 动手。');
 }
 function openShop() {
   if (!network.profile) { show(authDialog); return; }

@@ -79,6 +79,25 @@ export function canStandAt(area: Area, x: number, y: number) {
   });
 }
 
+/** A random standable spot in an area, clear of the door triggers.
+ *
+ *  Rejection sampling rather than a hand-picked list: the point is that the target turns up
+ *  somewhere different every time, and a list would quietly stop covering the floor the moment
+ *  someone moves a desk. The spawn points are the fallback so that a furniture edit which fills
+ *  a room can never hand a caller nothing — it just makes the placement less varied, loudly
+ *  enough to notice in play, instead of throwing in the middle of a tick.
+ */
+export function randomStandablePoint(area: Area, random: () => number = Math.random) {
+  const b = area.bounds, r = area.radius;
+  for (let i = 0; i < 200; i++) {
+    const x = b.x + r + random() * (b.width - r * 2);
+    const y = b.y + r + random() * (b.height - r * 2);
+    if (canStandAt(area, x, y) && !exitAt(area, x, y)) return { x, y };
+  }
+  const fallback = area.spawnPoints[Math.min(area.spawnPoints.length - 1, Math.floor(random() * area.spawnPoints.length))];
+  return { x: fallback.x, y: fallback.y };
+}
+
 export function moveIn(area: Area, actor: { x: number; y: number; vy: number; face: number }, input: Pick<Input, 'left' | 'right' | 'up' | 'down'>, dt = 1 / 30) {
   const dx = Number(input.right) - Number(input.left), dy = Number(!!input.down) - Number(!!input.up);
   const length = Math.hypot(dx, dy);

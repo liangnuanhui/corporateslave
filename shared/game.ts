@@ -19,7 +19,7 @@ export type Zone = 'office' | 'dungeon';
 export interface Profile { id: string; username: string; name: string; role: RoleId; coins: number; weapon: WeaponId; owned: WeaponId[]; clears: number }
 export interface Input { left: boolean; right: boolean; up: boolean; down: boolean; jump: boolean; attack: boolean; seq: number }
 export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number; area: AreaId }
-export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string }
+export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string; area: AreaId }
 export interface Snapshot { roomId: string; zone: Zone; tick: number; players: Actor[]; enemies: Enemy[]; status: 'playing' | 'complete'; wave: number }
 export const idleInput = (): Input => ({ left: false, right: false, up: false, down: false, jump: false, attack: false, seq: 0 });
 export function move(actor: Pick<Actor, 'x' | 'y' | 'vy' | 'face'>, input: Input, dt = WORLD.tick) {
@@ -38,3 +38,24 @@ export function inRange(attacker: Pick<Actor, 'x' | 'y' | 'face'>, target: { x: 
   const dx = target.x - attacker.x;
   return Math.abs(dx) < reach && Math.abs(target.y - attacker.y) < 85 && (Math.abs(dx) < 22 || Math.sign(dx) === attacker.face);
 }
+
+/** 办公室是俯视的，两个轴都是地面，所以近战范围就是一个半径——不能用 inRange()，那是侧视规则
+ *  （横向够得很远、纵向是一整条竖板）。正上方和正下方的人打得到：俯视时 face 只有左右两个值，
+ *  拿它去挡住上下方向，会变成「站在同事头顶上却打不着」。 */
+export function inMelee(attacker: Pick<Actor, 'x' | 'y' | 'face'>, target: { x: number; y: number }, reach = 64) {
+  const dx = target.x - attacker.x, dy = target.y - attacker.y;
+  if (dx * dx + dy * dy > reach * reach) return false;
+  return Math.abs(dx) < 20 || Math.sign(dx) === attacker.face;
+}
+
+/** 一次挥击打中的目标。抽成函数是为了能单测：判定藏在服务器 tick 里的时候，要验证「隔着一堵墙
+ *  在另一个房间打不到人」就得先把角色走到那个房间门口，于是没人会去验。三个条件缺一不可——
+ *  活着、同一个房间、在半径内。 */
+export function meleeHits<T extends { hp: number; area: AreaId; x: number; y: number }>(
+  attacker: Pick<Actor, 'x' | 'y' | 'face' | 'area'>, targets: readonly T[],
+): T[] {
+  return targets.filter(t => t.hp > 0 && t.area === attacker.area && inMelee(attacker, t));
+}
+
+/** MVP 只有一个可打的目标：一位血量和工位都随机的同事。名字是虚构的。 */
+export const NPC = { id: 'colleague', name: '刘正超', hpMin: 60, hpMax: 180, hpStep: 10, respawnMs: 8000 };

@@ -15,6 +15,24 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
+## 办公室里的攻击目标 — 2026-09-24
+
+攻击不再需要副本：每个角色默认能打，按 `J` 触发，目标就在办公室里。MVP 只放一个——
+虚构同事「刘正超」（`NPC`，shared/game.ts）。
+
+- **血量和出现位置每次重抽。** 血量在 60–180 之间按 10 取整；位置先随机挑一个开放区域，
+  再用 `randomStandablePoint()` 在里面拒绝采样，直到落在站得住、且不压门口触发器的点上。
+  被打倒 8 秒后重来一次，所以他换个工位继续上班。
+- **俯视的近战范围是一个半径**（`inMelee`，64px），不是副本那套侧视规则。侧视规则横向够得远、
+  纵向是一整条竖板，用在俯视会变成「站在同事正上方却打不着」。
+- **`meleeHits()` 把判定抽成纯函数**：活着 + 同一个房间 + 在半径内，三个条件缺一不可。
+  房间之间是各自独立的坐标系，(530,500) 在每个房间里都存在——少了 area 那一条，站在走廊上
+  就能隔着墙打到会议室里坐标相同的人，而且屏幕上什么都看不见。
+- **击退 6px，不是 12px。** 12px 时站着不动连打，大约四下就把他推出 64px 的攻击半径，
+  之后每一下都落空而屏幕上毫无反馈——看起来像攻击坏了。这个是集成测试跑出来的，不是设计出来的。
+
+还没有的：他不会还手，不会走动，打倒他也不给积分。玩家之间依然不会互相伤害。
+
 ## 画面尺寸不再做任何算术 — 2026-09-24
 
 同一个问题错了三次，每次换一种算法，每次都还是错：

@@ -1,13 +1,13 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { AREAS, corridor, exitAt, moveIn, type Area } from '../shared/world/index.js';
-import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
+import { AREAS, corridor, exitAt, canStandAt, moveIn, randomStandablePoint, type Area, type AreaId } from '../shared/world/index.js';
+import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
 export const activeAccounts = new Map<string, string>();
 interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number }
-interface Monster extends Enemy { attackAt: number; actionUntil: number }
+interface Monster extends Enemy { attackAt: number; actionUntil: number; respawnAt: number }
 
 export class WorldRoom extends Room {
   private zone: Zone = 'office';
@@ -27,11 +27,14 @@ export class WorldRoom extends Room {
     this.zone = options.zone;
     this.maxClients = this.zone === 'office' ? 24 : 8;
     this.setMetadata({ zone: this.zone });
+    // 副本的怪活在副本自己的坐标系里，area 对它们没有意义，填 corridor 占位。
+    const dungeon = (id: string, name: string, x: number, hp: number): Monster =>
+      ({ id, name, x, y: WORLD.floor, hp, maxHp: hp, face: -1, action: 'idle', attackAt: 0, actionUntil: 0, respawnAt: 0, area: 'corridor' });
     if (this.zone === 'dungeon') this.enemies = [
-      { id: 'scope', name: '临时需求怪', x: 740, y: WORLD.floor, hp: 70, maxHp: 70, face: -1, action: 'idle', attackAt: 0, actionUntil: 0 },
-      { id: 'meeting', name: '无效会议怪', x: 970, y: WORLD.floor, hp: 90, maxHp: 90, face: -1, action: 'idle', attackAt: 0, actionUntil: 0 },
-      { id: 'overtime', name: '加班大魔王', x: 1160, y: WORLD.floor, hp: 140, maxHp: 140, face: -1, action: 'idle', attackAt: 0, actionUntil: 0 },
+      dungeon('scope', '临时需求怪', 740, 70), dungeon('meeting', '无效会议怪', 970, 90), dungeon('overtime', '加班大魔王', 1160, 140),
     ];
+    // 办公室里放一个可打的同事：血量、所在房间、具体工位每次都重新抽。
+    else this.enemies = [this.placeColleague({ id: NPC.id, name: NPC.name, x: 0, y: 0, hp: 0, maxHp: 0, face: -1, action: 'idle', attackAt: 0, actionUntil: 0, respawnAt: 0, area: 'corridor' })];
     this.onMessage('input', (client, data) => {
       const p = this.players.get(client.sessionId);
       if (!p || !data || !Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq <= p.input.seq) return;
@@ -127,6 +130,23 @@ export class WorldRoom extends Room {
       if (this.zone === 'dungeon' && p.y < WORLD.floor - 4 && p.action !== 'attack') p.action = 'jump';
       if (input.attack && this.elapsed - p.attackAt >= 550) {
         p.attackAt = this.elapsed; p.action = 'attack'; p.actionUntil = this.elapsed + 230;
+        // 办公室：只打得到同一个房间里的目标，范围是俯视的一个半径（见 meleeHits / inMelee）。
+        if (area) for (const npc of meleeHits(p, this.enemies)) {
+          const damage = damageFor(p.role, p.weapon);
+          npc.hp = Math.max(0, npc.hp - damage);
+          // 击退必须过碰撞：否则一路把人推进墙里或推出房间。
+          // 6px 而不是 12：站着不动连打时，12px 大约四下就把他推出 64px 的攻击半径，
+          // 于是后面每一下都落空而屏幕上毫无反馈——看起来像攻击坏了。6px 够看出他在踉跄，
+          // 又不至于让「站着打完一管血」变成不可能。
+          const knocked = npc.x + p.face * 6;
+          if (canStandAt(area, knocked, npc.y)) npc.x = knocked;
+          npc.action = npc.hp ? 'hurt' : 'dead'; npc.actionUntil = this.elapsed + 180;
+          this.broadcast('hit', { id: npc.id, x: npc.x, y: npc.y - 34, damage });
+          if (!npc.hp) {
+            npc.respawnAt = this.elapsed + NPC.respawnMs;
+            this.broadcast('notice', `${npc.name} 躺平了。他会换个工位继续上班。`);
+          }
+        }
         if (this.zone === 'dungeon' && this.status === 'playing') {
           for (const enemy of this.enemies) if (enemy.hp > 0 && inRange(p, enemy)) {
             const damage = damageFor(p.role, p.weapon);
@@ -136,6 +156,12 @@ export class WorldRoom extends Room {
             this.broadcast('hit', { id: enemy.id, x: enemy.x, y: enemy.y - 65, damage });
           }
         }
+      }
+    }
+    if (this.zone === 'office') {
+      for (const npc of this.enemies) {
+        if (npc.hp <= 0) { if (this.elapsed >= npc.respawnAt) this.placeColleague(npc); continue; }
+        if (npc.action === 'hurt' && this.elapsed > npc.actionUntil) npc.action = 'idle';
       }
     }
     if (this.zone === 'dungeon' && this.status === 'playing') {
@@ -177,11 +203,23 @@ export class WorldRoom extends Room {
     p.exitCooldown = this.elapsed + 400;
     client?.send('transition', { to: exit.to, name: AREAS[exit.to].name });
   }
+  /** 重新抽一次：哪个房间、房间里哪个位置、多少血。每次开房和每次被打倒后各调一次。 */
+  private placeColleague(npc: Monster): Monster {
+    const ids = Object.keys(AREAS) as AreaId[];
+    const area = AREAS[ids[Math.floor(Math.random() * ids.length)]];
+    const spot = randomStandablePoint(area);
+    npc.area = area.id; npc.x = spot.x; npc.y = spot.y; npc.face = Math.random() < .5 ? -1 : 1;
+    const steps = Math.floor((NPC.hpMax - NPC.hpMin) / NPC.hpStep) + 1;
+    npc.maxHp = NPC.hpMin + Math.floor(Math.random() * steps) * NPC.hpStep;
+    npc.hp = npc.maxHp; npc.action = 'idle'; npc.actionUntil = 0; npc.respawnAt = 0;
+    return npc;
+  }
+
   private snapshot(): Snapshot {
     return {
       roomId: this.roomId, zone: this.zone, tick: this.tickNumber, status: this.status, wave: 1,
       players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, role: p.role, x: p.x, y: p.y, vy: p.vy, face: p.face, hp: p.hp, weapon: p.weapon, action: p.action, ack: p.ack, area: p.area })),
-      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action })),
+      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action, area: e.area })),
     };
   }
   private async shop(client: Client, message: { weapon?: string }) {
