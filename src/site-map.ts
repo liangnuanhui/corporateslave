@@ -1,24 +1,30 @@
-import { SITES, type Site } from '../shared/sites';
+import { SITES, project, type Site } from '../shared/sites';
 
 const marker = (site: Site) => `<button type="button" class="site-dot ${site.open ? 'open' : 'closed'}" data-site="${site.id}" style="left:${site.x}%;top:${site.y}%" ${site.open ? '' : 'tabindex="-1" aria-disabled="true"'} aria-label="${site.name}${site.open ? '' : `，${site.detail}`}"><span class="site-dot-ring"></span><span class="site-dot-tag"><strong>${site.name}</strong><small>${site.detail}</small></span></button>`;
+
+// A dozen lon/lat points tracing the broad silhouette only — the northeast extension, an east
+// coast that runs roughly north-south, the corner where it turns west in the south, and a wide
+// west. Projected through the same `project()` SITES uses, so the coastline and the city dots
+// can never independently drift apart. Deliberately spare: more coastal detail read as teeth
+// (Pac-Man) rather than a recognizable silhouette on the previous attempt.
+const OUTLINE: Array<[number, number]> = [
+  [134, 53], [122, 41], [123, 32], [119, 26], [114, 22], [106, 21], [98, 22],
+  [80, 28], [74, 40], [80, 49], [105, 50], [122, 50],
+];
+const outlinePath = 'M' + OUTLINE.map(([lon, lat]) => { const p = project(lon, lat); return `${p.x.toFixed(1)},${p.y.toFixed(1)}`; }).join(' L ') + ' Z';
 
 export const siteMapMarkup = `
   <div class="site-map" id="site-map">
     <div class="site-map-card">
       <p class="site-map-eyebrow">摸鱼科技 · 全国网点</p>
-      <h1 class="site-map-title">今天，去哪儿摸鱼？</h1>
+      <h1 class="site-map-title">今天，去哪？</h1>
       <div class="site-map-stage">
         <svg class="site-map-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          <!-- A rough, asymmetric silhouette — not real geography, but with the landmarks (Bohai
-               notch, Shandong's jut, the northeast ear, the Pearl/Yangtze delta bulges, the
-               south-west taper, Hainan and Taiwan) that make it read as China at a glance. -->
-          <path d="M68,4 L88,10 L82,17 L86,20 L70,23 L78,27 L94,30 L80,34 L86,42 L74,50 L80,55 L70,64 L78,72 L62,80 L46,88 L28,82 L16,68 L6,48 L10,28 L24,10 L46,3 L58,2 Z"/>
-          <ellipse cx="54" cy="90" rx="4.5" ry="3.4"/>
-          <ellipse cx="87" cy="59" rx="2.6" ry="5.4" transform="rotate(18 87 59)"/>
+          <path d="${outlinePath}"/>
         </svg>
         ${SITES.map(marker).join('')}
       </div>
-      <p class="site-map-hint">点击杭州总部，进入办公室 · 按任意键或点击可跳过</p>
+      <p class="site-map-hint">点击${SITES.find(site => site.open)?.name ?? ''}，进入办公室 · 按任意键或点击可跳过</p>
     </div>
   </div>`;
 

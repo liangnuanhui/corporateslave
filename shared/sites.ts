@@ -1,7 +1,27 @@
 export interface Site { id: string; name: string; detail: string; x: number; y: number; open: boolean }
-/** x / y are percentages on the map panel, so the layout is resolution independent. */
+
+/** Mainland bounding box in degrees — 73–135°E covers Xinjiang to the northeast coast, 18–53°N
+ *  covers the southern coast to the Heilongjiang border. `project()` is the one place a real
+ *  lon/lat becomes a map-panel percentage, so SITES below and the outline in site-map.ts (which
+ *  projects its own lon/lat vertex list through this same function) can never independently
+ *  drift apart — a city's dot is derived from the same mapping as the coastline it sits near. */
+export const LON_RANGE: readonly [number, number] = [73, 135];
+export const LAT_RANGE: readonly [number, number] = [18, 53];
+
+/** Equirectangular-ish projection into percentages (0–100), resolution independent. Latitude
+ *  runs opposite to SVG's y axis (north is a smaller y), hence the flip on the lat term. */
+export function project(lon: number, lat: number) {
+  return {
+    x: (lon - LON_RANGE[0]) / (LON_RANGE[1] - LON_RANGE[0]) * 100,
+    y: (LAT_RANGE[1] - lat) / (LAT_RANGE[1] - LAT_RANGE[0]) * 100,
+  };
+}
+
+const site = (id: string, name: string, detail: string, lon: number, lat: number, open: boolean): Site =>
+  ({ id, name, detail, open, ...project(lon, lat) });
+
 export const SITES: Site[] = [
-  { id: 'hangzhou', name: '杭州总部', detail: '摸鱼科技 · 1F', x: 62, y: 52, open: true },
-  { id: 'beijing', name: '北京分部', detail: '筹备中', x: 55, y: 24, open: false },
-  { id: 'shenzhen', name: '深圳分部', detail: '筹备中', x: 57, y: 79, open: false },
+  site('beijing', '北京总部', '摸鱼科技 · 1F', 116.4, 39.9, true),
+  site('shanghai', '上海办', '筹备中', 121.5, 31.2, false),
+  site('guangzhou', '广州办', '筹备中', 113.3, 23.1, false),
 ];
