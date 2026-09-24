@@ -248,19 +248,24 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       console.log(`integration: ${NPC.name} 在 ${AREAS[back.area].name} 重新上班，${back.hp} 血`);
       // 他自己上班的那部分：会走动、会摆姿势、会说废话。上面走过去、打、等重生的过程里
       // 已经连续采样了十几秒，这里只是把观察结果断言出来，不再另外空等。
-      // 采样窗口有两个坑，都踩过：
-      // 1) 退出条件必须把「走动」算进去。第一版只要「说过话 + 两种姿势」就收工，而他刚重新
-      //    出现时立刻说一句、姿势从 idle 变 walk，一拍就满足——循环在他真正迈开腿之前退出，
-      //    seen.moved 只有 24px。
-      // 2) 窗口要够长。他每段活动之间歇 4–11 秒，下一段有一半概率不是走动；连着抽中两三次
-      //    「玩手机」就是二三十秒不挪窝（实测独立探针：20 秒走了 569px，但那是运气好的一次）。
-      //    19 秒的窗口因此会偶发地什么都没看到——断言是真的，观察时间不够而已。
-      //    满足条件就立刻退出，所以正常情况下这里只花几秒。
-      for (let i = 0; i < 320 && (!seen.say.size || !seen.doing.has('walk') || seen.moved <= 60); i++) { observe(); await pause(120); }
-      assert.ok(seen.moved > 60, `${NPC.name} 应该会自己走动（累计只移动了 ${seen.moved.toFixed(0)}px）`);
-      assert.ok(seen.doing.has('walk'), `没看到他走动过 (${[...seen.doing].join('/')})`);
-      assert.ok([...seen.doing].some(d => d === 'desk' || d === 'phone' || d === 'idle'), `没看到他停下来做点什么 (${[...seen.doing].join('/')})`);
-      assert.ok(seen.say.size > 0, '没看到他说过任何话');
+      // 采样窗口踩过三次，每次都是同一个形状：**循环的退出条件和后面的断言是两份清单，会漂**。
+      //   1) 只等「说过话 + 两种姿势」，他刚出现就说一句、姿势 idle→walk，一拍满足，
+      //      循环在他真正迈开腿之前退出，seen.moved 只有 24px；
+      //   2) 补上 moved 之后，又漏了「停下来做点什么」——满足前三条时他正在走，
+      //      从没观察到 desk/phone/idle，断言挂在 (walk/hurt) 上；
+      //   3) 窗口本身也要长过他 4–11 秒的发呆间隔，否则断言是真的、只是没看够。
+      // 所以清单只写一份：循环等它全绿，断言逐条报哪一条没绿。两者不可能再对不上。
+      const checks: [string, () => boolean][] = [
+        ['自己走动过', () => seen.moved > 60],
+        ['出现过走动姿势', () => seen.doing.has('walk')],
+        ['停下来做过点什么', () => [...seen.doing].some(d => d === 'desk' || d === 'phone' || d === 'idle')],
+        ['说过话', () => seen.say.size > 0],
+      ];
+      const detail = () => `移动 ${seen.moved.toFixed(0)}px，姿势 ${[...seen.doing].join('/')}，说过 ${seen.say.size} 句`;
+      for (let i = 0; i < 400 && !checks.every(([, ok]) => ok()); i++) { observe(); await pause(120); }
+      for (const [what, ok] of checks) assert.ok(ok(), `${NPC.name} 没有${what}（${detail()}）`);
+      // 说的必须是台词表里的句子：服务器要是把别的字段（名字、房间名）当台词发出去，上面
+      // 「说过话」那条照样绿。
       for (const line of seen.say) assert.ok(NPC_LINES.includes(line), `说了一句台词表里没有的话：${line}`);
       console.log(`integration: ${NPC.name} 移动 ${seen.moved.toFixed(0)}px，姿势 ${[...seen.doing].join('/')}，说过 ${seen.say.size} 句`);
       // 这一段打完人可能停在任意一个房间里，而后面每一段都假设「人在走廊、用走廊坐标」。
