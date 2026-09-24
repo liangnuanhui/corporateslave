@@ -19,6 +19,12 @@ export class OfficeScene extends Phaser.Scene {
    *  the hard cut until the curtain camera-fade is actually dark instead of cutting through it. */
   private transitionPending = false;
   private transitionDeadline = 0;
+  /** True while `transitionPending` was raised by `playOpening()` rather than a door crossing —
+   *  same gate, same wait/cut timing, but no fade cosmetic (nothing was ever faded out) and the
+   *  camera pushes in on the player once the cut lands, instead of just clearing the curtain. */
+  private openingHold = false;
+  private openingResolve?: () => void;
+  private openingSkip?: () => void;
   private cameraElapsed = 0;
   private seq = 0;
   private inputElapsed = 0;
@@ -82,9 +88,23 @@ export class OfficeScene extends Phaser.Scene {
     // is the pure, unit-tested state machine behind this decision — see office-transition.ts.
     const mismatched = Boolean(office !== this.officeMode || (area && area !== this.currentArea));
     const action = gateTransition(mismatched, this.transitionPending, this.cameras.main.fadeEffect.progress, time, this.transitionDeadline);
-    if (action === 'clear') { this.transitionPending = false; this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16); }
+    if (action === 'clear') {
+      this.transitionPending = false;
+      // The opening's hold never darkened the curtain (there's nothing to reveal), so it resolves
+      // quietly instead of playing the door's fade-back-in. 'clear' (rather than 'cut') means the
+      // area never actually mismatched — we spawned in the corridor itself, the one already drawn —
+      // so there's no rebuild to hang the push-in on; do it here instead.
+      if (this.openingHold) {
+        this.openingHold = false;
+        const actor = snap?.players.find(p => p.id === this.network.profile?.id);
+        if (actor) this.officeCamera.focus(actor.x, actor.y);
+        this.endOpening();
+      }
+      else this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16);
+    }
     else if (action === 'cut') {
-      const pending = this.transitionPending; this.transitionPending = false;
+      const pending = this.transitionPending, opening = this.openingHold;
+      this.transitionPending = false; this.openingHold = false;
       this.officeMode = office; this.currentArea = area ?? this.currentArea;
       this.floorPlan?.destroy();
       this.floorPlan = office ? drawArea(this, AREAS[this.currentArea]) : undefined;
@@ -97,9 +117,15 @@ export class OfficeScene extends Phaser.Scene {
       if (office) this.network.emit('area', this.currentArea);
       for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
       this.visuals.clear(); this.resetInput();
+      if (opening) {
+        // The opening's whole point: land the push on wherever the server actually spawned us.
+        const actor = snap?.players.find(p => p.id === this.network.profile?.id);
+        if (actor) this.officeCamera.focus(actor.x, actor.y);
+        this.endOpening();
+      }
       // Only a curtain we actually darkened needs clearing back — a bare authority hard cut stays
       // an instant cut, exactly as it was before this feature existed.
-      if (pending) this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16);
+      else if (pending) this.cameras.main.fadeIn(220, 0x0b, 0x11, 0x16);
     }
     const jump = !office && !blocked && (this.keys.SPACE.isDown || this.keys.W.isDown || this.keys.UP.isDown || this.touch.jump);
     if (jump && !this.lastJump) this.jumpQueued = true; this.lastJump = jump;
@@ -161,6 +187,32 @@ export class OfficeScene extends Phaser.Scene {
     v.health.clear();
     if (enemy && actor.hp > 0) { v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32,v.sprite.y-height-9,64,5); v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32,v.sprite.y-height-9,64*actor.hp/(actor as Enemy).maxHp,5); }
     v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
+  }
+  /** Opening: hold the whole floor for a beat, then push into wherever the server spawned us.
+   *  The first snapshot can arrive saying we're already in a room, and update()'s authority rule
+   *  would otherwise cut there before the overview is even seen — so this holds it back through
+   *  the very same gate a door crossing uses (`transitionPending` / `transitionDeadline` /
+   *  `gateTransition`), just tagged `openingHold` so the cut branch pushes the camera in on us
+   *  instead of playing the door's fade cosmetic. No second decision path, no second write to
+   *  `currentArea`. Any key or click fast-forwards the deadline, which the gate already treats
+   *  as "overdue" — the same code that ends the hold on time ends it on skip. */
+  playOpening() {
+    if (this.transitionPending) return Promise.resolve(); // a real door transition is already in flight
+    this.officeCamera.configure(AREAS.corridor);
+    this.openingHold = true;
+    this.transitionPending = true;
+    this.transitionDeadline = this.time.now + 1500;
+    return new Promise<void>(resolve => {
+      this.openingResolve = resolve;
+      this.openingSkip = () => { this.transitionDeadline = this.time.now; };
+      window.addEventListener('keydown', this.openingSkip); window.addEventListener('pointerdown', this.openingSkip);
+    });
+  }
+  /** Tears down the opening's skip listeners and resolves its promise — called from update() the
+   *  moment the held cut/clear actually lands, whether that was by timeout or by skip. */
+  private endOpening() {
+    if (this.openingSkip) { window.removeEventListener('keydown', this.openingSkip); window.removeEventListener('pointerdown', this.openingSkip); this.openingSkip = undefined; }
+    this.openingResolve?.(); this.openingResolve = undefined;
   }
   zoomBy(factor: number) { this.officeCamera?.zoomBy(factor); }
   overview() { this.officeCamera?.overview(); }

@@ -74,3 +74,24 @@ footer{padding:11px 0 13px}
   .roster-heading{margin-top:12px;padding-top:12px}
   .roster{min-height:38px;max-height:92px}
 }
+
+/* Opening: a full-screen overlay shown once per page load, before the game canvas means anything. */
+.site-map{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:24px;background:#11151cf5}
+.site-map-card{width:min(640px,100%);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:36px 32px;text-align:center;box-shadow:0 30px 90px #000a}
+.site-map-eyebrow{margin:0 0 8px;font-size:12px;letter-spacing:1px;color:var(--muted)}
+.site-map-title{margin:0 0 28px;font-size:clamp(20px,2.6vw,28px);font-weight:900;color:#f5eedc}
+.site-map-stage{position:relative;width:100%;max-width:440px;aspect-ratio:100/82;margin:0 auto}
+.site-map-outline{position:absolute;inset:0;width:100%;height:100%}
+.site-map-outline path{fill:#202932;stroke:var(--line);stroke-width:1.2;vector-effect:non-scaling-stroke}
+.site-dot{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;padding:6px;cursor:pointer}
+.site-dot-ring{width:13px;height:13px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 4px #929eaa22}
+.site-dot.open .site-dot-ring{background:var(--mint);box-shadow:0 0 0 4px #a6e8c22e;animation:site-pulse 2.2s ease-in-out infinite}
+.site-dot.open:hover .site-dot-ring{background:#c3f4d7}
+.site-dot.closed{cursor:default}
+.site-dot-tag{display:flex;flex-direction:column;align-items:center;line-height:1.4;white-space:nowrap}
+.site-dot-tag strong{font-size:12px;font-weight:700;color:#f5eedc}
+.site-dot.closed .site-dot-tag strong{color:var(--muted)}
+.site-dot-tag small{font-size:9px;color:var(--muted)}
+.site-dot.closed .site-dot-tag small{margin-top:2px;padding:1px 7px;border:1px solid var(--line);border-radius:20px}
+.site-map-hint{margin:28px 0 0;font-size:12px;color:var(--muted)}
+@keyframes site-pulse{0%,100%{box-shadow:0 0 0 4px #a6e8c22e}50%{box-shadow:0 0 0 9px #a6e8c214}}

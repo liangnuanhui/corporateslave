@@ -3,6 +3,7 @@ import { Network } from './network';
 import { createGame } from './game';
 import { roomAt, AREAS } from '../shared/world';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
+import { showSiteMap } from './site-map';
 import { ROLES, WEAPONS, damageFor, type Zone } from '../shared/game';
 
 const paths: Record<string,string> = {
@@ -69,6 +70,10 @@ function initialJoin() {
   const params = new URLSearchParams(location.search);
   return join(params.get('zone') === 'dungeon' ? 'dungeon' : 'office', params.get('room') || undefined);
 }
+// The very first thing anyone sees, on every path in: a returning session, a fresh register, and
+// 快速试玩 all look identical — the national map, then the floor overview, then the push into
+// wherever the server actually spawned us. showSiteMap() only shows once per page load on its own.
+async function openingSequence() { await showSiteMap(); await initialJoin(); await scene.playOpening(); }
 function interact() {
   if (!network.profile) { show(authDialog); return; }
   const actor = network.snapshot?.players.find(p=>p.id===network.profile!.id);
@@ -160,13 +165,13 @@ $('auth-toggle').onclick=()=>{
 };
 $('auth-form').onsubmit=async event=>{
   event.preventDefault(); const button=$<HTMLButtonElement>('auth-submit'); button.disabled=true; $('auth-error').textContent='';
-  try { await network.auth(loginMode?'login':'register',Object.fromEntries(new FormData(event.target as HTMLFormElement)) as Record<string,string>); authDialog.close(); await initialJoin(); }
+  try { await network.auth(loginMode?'login':'register',Object.fromEntries(new FormData(event.target as HTMLFormElement)) as Record<string,string>); authDialog.close(); await openingSequence(); }
   catch(error) { $('auth-error').textContent=errorMessage(error); }
   finally {button.disabled=false;}
 };
 $('guest').onclick=async ()=>{
   const button=$<HTMLButtonElement>('guest'); button.disabled=true;
-  try { await network.auth('guest',{}); authDialog.close(); await initialJoin(); }
+  try { await network.auth('guest',{}); authDialog.close(); await openingSequence(); }
   catch(error){$('auth-error').textContent=errorMessage(error);}
   finally{button.disabled=false;}
 };
@@ -190,4 +195,4 @@ document.querySelectorAll<HTMLButtonElement>('[data-touch]').forEach(button=>{
 });
 window.addEventListener('keydown',event=>{if(!document.querySelector('dialog[open]')&&['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code))event.preventDefault();});
 setInterval(()=>{if(network.connected)network.room?.send('ping',Date.now());},3000);
-void network.restore().then(restored=>{if(restored)return initialJoin();}).catch(()=>toast('服务器暂时无法连接。请确认服务已启动后重试。'));
+void network.restore().then(restored=>{if(restored)return openingSequence();}).catch(()=>toast('服务器暂时无法连接。请确认服务已启动后重试。'));
