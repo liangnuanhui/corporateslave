@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { CHAIR_LIFT, CORRIDOR_ROOMS, FRONT_WALL_LIFT, WALL_LIFT, WALL_SIZE, doorway, type Area, type Furniture, type Rect } from '../../shared/world';
 import { depthOf, faces, shade, signWall, wallRole, type Solid } from './oblique';
+import { TEXT_RASTER } from './dpr';
 
 /** Above every solid, below the name plates at 10000 — for labels a character can never reach. */
 const SIGN_DEPTH = 9000;
@@ -8,14 +9,6 @@ const WALL_TOP = 0x7b9084;
 const TOP: Record<Furniture['kind'], number> = { desk: 0x9d845f, table: 0x9d845f, shelf: 0xa8946c, counter: 0x9c9077, sofa: 0x6f8d7d, plant: 0x9a7455 };
 
 /** Draw one area in 3/4 oblique. Collision never sees any of this — footprints stay flat. */
-/** Floor-plan text is drawn in world space, so the camera scales it — and `pixelArt: true` puts
- *  every texture on NEAREST filtering, which turns any non-integer scale into dropped rows. At the
- *  overview the corridor's 1824px fit into ~1330 canvas px (×0.73), which is exactly that case:
- *  the signage came out furry. Rasterising each label at RASTER× its nominal size and letting it
- *  sample linearly costs a few hundred KB of texture and makes every scale in between clean.
- *  The pixel-art atlas is untouched — this is per-Text, not a global render setting. */
-const RASTER = 3;
-
 export function drawArea(scene: Phaser.Scene, area: Area, siteName: string) {
   const root = scene.add.container(0, 0);
   const floor = scene.add.graphics(); root.add(floor);
@@ -26,7 +19,7 @@ export function drawArea(scene: Phaser.Scene, area: Area, siteName: string) {
 
   const rect = (x: number, y: number, w: number, h: number, color: number) => { floor.fillStyle(color).fillRect(x, y, w, h); };
   const text = (x: number, y: number, value: string, size: number, color: string, bold = false, depth?: number) => {
-    const label = scene.add.text(x, y, value, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal', resolution: RASTER }).setOrigin(.5);
+    const label = scene.add.text(x, y, value, { fontFamily: 'system-ui, sans-serif', fontSize: `${size}px`, color, fontStyle: bold ? 'bold' : 'normal', resolution: TEXT_RASTER }).setOrigin(.5);
     label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     if (depth === undefined) root.add(label); else { label.setDepth(depth); raised.push(label); }
     return label;

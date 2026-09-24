@@ -1,19 +1,24 @@
 import Phaser from 'phaser';
 import { corridor, type Area } from '../shared/world';
 import { WORLD } from '../shared/game';
+import { RENDER_SCALE } from './render/dpr';
 
 export interface CameraView { x: number; y: number; width: number; height: number; zoom: number; following: boolean; atMax: boolean }
 
-/** Screen pixels from the viewport border that start an RTS-style edge scroll. */
-const EDGE = 28;
-/** Pan speed in screen pixels per second, so panning feels the same at every zoom. */
-const EDGE_SPEED = 780;
+// This camera measures itself in the canvas's own buffer pixels, and the buffer is RENDER_SCALE
+// times the CSS box (see render/dpr.ts). Every constant below is a distance or a speed the person
+// perceives in CSS pixels, so each is scaled once, here. Ratios are not: `minZoom` and the 100%
+// readout divide two buffer measurements, and `focus()` works in multiples of minZoom.
+/** CSS pixels from the viewport border that start an RTS-style edge scroll. */
+const EDGE = 28 * RENDER_SCALE;
+/** Pan speed in CSS pixels per second, so panning feels the same at every zoom. */
+const EDGE_SPEED = 780 * RENDER_SCALE;
 const ZOOM_RESPONSE = 90;
 /** The hint bar floats over the bottom of the stage (39-40px tall, measured). Framing an area into
  *  the band above it is the only way a room's south door stays visible. This was 86 while the zoom
  *  controls also floated there at bottom:45px; they now live in the map panel, and leaving the old
  *  value reserved a second toolbar's worth of empty floor that nothing draws in. */
-const BOTTOM_UI = 44;
+const BOTTOM_UI = 44 * RENDER_SCALE;
 
 /**
  * Age-of-Empires style floor camera over one area: the wheel zooms about the cursor, the
@@ -22,7 +27,7 @@ const BOTTOM_UI = 44;
 export class OfficeCamera {
   active = true;
   following = false;
-  readonly maxZoom = 5;
+  readonly maxZoom = 5 * RENDER_SCALE;
   private area: Area = corridor;
   private center = { x: corridor.width / 2, y: corridor.height / 2 };
   private targetZoom = 1;

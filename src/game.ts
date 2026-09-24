@@ -4,6 +4,7 @@ import { Network } from './network';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
 import { drawArea, createOfficeAvatar } from './render/area-renderer';
 import { currentSite } from './site-map';
+import { RENDER_SCALE, TEXT_RASTER } from './render/dpr';
 import { OfficeCamera } from './office-camera';
 import { TRANSITION_TIMEOUT_MS, gateTransition, shouldStartFadeOut } from './office-transition';
 
@@ -170,7 +171,8 @@ export class OfficeScene extends Phaser.Scene {
     if (!v) {
       const shadow = this.add.ellipse(actor.x, WORLD.floor - 1, width * .64, 9, 0x10151b, .28);
       const sprite = this.add.sprite(actor.x, actor.y, office ? 'office-avatar' : 'atlas', office ? undefined : enemy ? 8 : 0).setOrigin(.5, office ? .5 : 1);
-      const label = this.add.text(actor.x, actor.y - height - 18, '', { fontSize: office ? '16px' : '15px', fontFamily: 'system-ui, sans-serif', color: '#f5eedc', backgroundColor: '#111820dd', padding: {x: 7, y: 4} }).setOrigin(.5,1);
+      const label = this.add.text(actor.x, actor.y - height - 18, '', { fontSize: office ? '16px' : '15px', fontFamily: 'system-ui, sans-serif', color: '#f5eedc', backgroundColor: '#111820dd', padding: {x: 7, y: 4}, resolution: TEXT_RASTER }).setOrigin(.5,1);
+      label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
       const health = this.add.graphics(); v = { sprite, label, shadow, health }; this.visuals.set(actor.id, v);
     }
     const my = actor.id === this.network.profile?.id;
@@ -258,8 +260,21 @@ export function createGame(network: Network, blocked: () => boolean, interact: (
   const game = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', width: WORLD.width, height: WORLD.height,
     backgroundColor:'#1a212b', pixelArt: true, roundPixels: true,
     input: { mouse: { preventDefaultWheel: true }, touch: true },
-    scale: { mode: Phaser.Scale.RESIZE, autoCenter: Phaser.Scale.NO_CENTER },
+    // NONE, not RESIZE, on purpose. RESIZE sizes the drawing buffer to the parent's CSS box and
+    // ignores `zoom` entirely (measured: a 1332px-wide box kept a 1332px buffer on a 2× screen),
+    // so the display stretched every pixel of the game picture. Driving the size here lets the
+    // buffer be RENDER_SCALE× the box while the stylesheet keeps the canvas displaying at the
+    // box's size — which is all "render at device resolution" means.
+    scale: { mode: Phaser.Scale.NONE, autoCenter: Phaser.Scale.NO_CENTER },
     scene, audio: { noAudio: true }, banner: false,
   });
+  const host = document.getElementById('game')!;
+  const fit = () => {
+    const { width, height } = host.getBoundingClientRect();
+    if (!width || !height) return; // hidden or mid-layout: Phaser clamps to 1×1 and never recovers
+    game.scale.resize(Math.max(100, Math.round(width * RENDER_SCALE)), Math.max(100, Math.round(height * RENDER_SCALE)));
+  };
+  new ResizeObserver(fit).observe(host);
+  fit();
   return { game, scene };
 }

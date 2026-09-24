@@ -15,6 +15,23 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
+## 画面按设备分辨率渲染 — 2026-09-24
+
+Phaser 的 RESIZE 缩放模式按 CSS 像素给画布分配绘制缓冲，并且在这个模式下直接忽略 `zoom`
+（实测：2 倍屏上 1332px 宽的画布，缓冲还是 1332px）。于是视网膜屏把整张游戏画面放大一倍显示
+——这才是「字为什么那么模糊」的主因，跟字号和文字光栅都没关系。
+
+改法：`Scale.NONE` + 一个 ResizeObserver，自己把缓冲设成 CSS 尺寸的 `RENDER_SCALE` 倍
+（见 src/render/dpr.ts，上限 2 倍）。样式表本来就把画布强制显示成容器大小，所以显示尺寸不变。
+
+**代价是相机从此按缓冲像素度量自己。** src/office-camera.ts 是唯一还用屏幕坐标思考的地方，
+里面每一个「人眼感知的距离或速度」都要乘 RENDER_SCALE：EDGE、EDGE_SPEED、BOTTOM_UI、maxZoom。
+比值不用乘——minZoom 和那个 100% 读数都是两个缓冲量相除，focus() 也按 minZoom 的倍数工作。
+改这个文件时，先分清手上的量是「比值」还是「距离」。
+
+实测（1440×900，dpr 1 与 dpr 2 各跑一遍）：光标锚点缩放漂移 0.28 / 0.24 CSS 像素，
+拖拽 200 CSS 像素视野正好走 200，缓冲比 1.00 → 2.00，连续五次改窗口尺寸后仍是 2.00。
+
 ## 界面收窄 — 2026-09-24
 
 右侧那条任务栏（品牌、公共办公室 / 装备商店 导航、下班计划三步、创建角色主按钮、房间成员名单、
