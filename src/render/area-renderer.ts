@@ -1,12 +1,7 @@
 import Phaser from 'phaser';
-import { CORRIDOR_ROOMS, WALL_SIZE, doorway, type Area, type Furniture, type Rect } from '../../shared/world';
+import { CHAIR_LIFT, CORRIDOR_ROOMS, FRONT_WALL_LIFT, WALL_LIFT, WALL_SIZE, doorway, type Area, type Furniture, type Rect } from '../../shared/world';
 import { depthOf, faces, shade, signWall, wallRole, type Solid } from './oblique';
 
-const WALL_LIFT = 46;
-/** The whole south edge of a room is walkable, so a full-height south wall would draw over any
- *  character walking along it. It stays a low ledge that only clips their feet. */
-const FRONT_WALL_LIFT = 12;
-const CHAIR_LIFT = 18;
 /** Above every solid, below the name plates at 10000 — for labels a character can never reach. */
 const SIGN_DEPTH = 9000;
 const WALL_TOP = 0x7b9084;

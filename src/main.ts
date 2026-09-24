@@ -66,9 +66,9 @@ async function join(zone: Zone, roomId?: string) {
   catch (error) { toast(errorMessage(error)); $('connection').querySelector('span')!.textContent = '点击重试'; }
   finally { $('primary').removeAttribute('disabled'); }
 }
+const linkedZone = (): Zone => new URLSearchParams(location.search).get('zone') === 'dungeon' ? 'dungeon' : 'office';
 function initialJoin() {
-  const params = new URLSearchParams(location.search);
-  return join(params.get('zone') === 'dungeon' ? 'dungeon' : 'office', params.get('room') || undefined);
+  return join(linkedZone(), new URLSearchParams(location.search).get('room') || undefined);
 }
 // The very first thing anyone sees, on every path in: a returning session, a fresh register, and
 // 快速试玩 all look identical — the national map, then the floor overview, then the push into
@@ -78,6 +78,10 @@ function initialJoin() {
 // `skipped` so playOpening() — entered only after the join round trip — knows to end immediately
 // instead of waiting out its own 1.5s, rather than requiring a second press to get past the join gap.
 async function openingSequence() {
+  // The 邀请 button mints ?zone=dungeon links. Following one is a request for the dungeon, not
+  // for the office: the site map is about choosing an office, and playOpening() would frame the
+  // corridor for 1.5s with the dungeon's actors drawn on top of it at office scale.
+  if (linkedZone() === 'dungeon') { await initialJoin(); return; }
   let skipped = false;
   const skip = () => { skipped = true; };
   window.addEventListener('keydown', skip); window.addEventListener('pointerdown', skip);

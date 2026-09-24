@@ -1,7 +1,7 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { AREAS, moveIn, exitAt, type Area } from '../shared/world/index.js';
+import { AREAS, corridor, exitAt, moveIn, type Area } from '../shared/world/index.js';
 import { WORLD, move, idleInput, damageFor, inRange, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
@@ -65,6 +65,9 @@ export class WorldRoom extends Room {
       const near = taken.filter(p => p.area === c.area);
       return { c, score: near.length ? Math.min(...near.map(p => Math.hypot(p.x - c.x, p.y - c.y))) : Infinity };
     });
+    // Math.max of nothing is -Infinity and would crash the join below; the comment above invites
+    // emptying spawnPoints, so fail into the corridor's origin rather than into onJoin.
+    if (!scored.length) return { area: 'corridor' as const, x: corridor.bounds.x + corridor.radius, y: corridor.bounds.y + corridor.radius };
     const bestScore = Math.max(...scored.map(s => s.score));
     const EPS = 1; // px; guards against float noise without conflating genuinely different distances
     const tied = scored.filter(s => bestScore === Infinity ? s.score === Infinity : bestScore - s.score < EPS);
@@ -157,16 +160,19 @@ export class WorldRoom extends Room {
     }
     if (this.tickNumber % 2 === 0) this.broadcast('snapshot', this.snapshot());
   }
+  private clientOf(sessionId: string) { return this.clients.find(c => c.sessionId === sessionId); }
   /** The server switches area immediately; the client's fade is pure presentation. */
   private tryExit(sessionId: string, p: Player, area: Area) {
     const exit = exitAt(area, p.x, p.y);
     if (!exit) return;
-    const client = this.clients.find(c => c.sessionId === sessionId);
     if (exit.locked) {
       // Rate-limited: standing on a locked threshold would otherwise fire ~30 notices/second.
-      if (this.elapsed - p.noticeAt > 2500) { p.noticeAt = this.elapsed; client?.send('notice', `${exit.label}还在装修中，敬请期待`); }
+      // The client lookup stays inside the throttle so camping a threshold costs one scan per
+      // notice rather than one per tick.
+      if (this.elapsed - p.noticeAt > 2500) { p.noticeAt = this.elapsed; this.clientOf(sessionId)?.send('notice', `${exit.label}还在装修中，敬请期待`); }
       return;
     }
+    const client = this.clientOf(sessionId);
     p.area = exit.to; p.x = exit.at.x; p.y = exit.at.y; p.vy = 0;
     p.exitCooldown = this.elapsed + 400;
     client?.send('transition', { to: exit.to, name: AREAS[exit.to].name });

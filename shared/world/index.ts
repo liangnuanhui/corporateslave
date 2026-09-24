@@ -42,6 +42,19 @@ export const MAX_LIFT = 26;
 const LIFT: Record<Furniture['kind'], number> = { desk: 22, table: MAX_LIFT, shelf: MAX_LIFT, counter: MAX_LIFT, sofa: MAX_LIFT, plant: MAX_LIFT };
 for (const area of Object.values(AREAS)) for (const item of area.furniture) item.lift ??= LIFT[item.kind];
 
+/** Walls and chairs are drawn from the renderer rather than carried on the area data, so their
+ *  heights live here too. The cap has to cover everything that is lifted, not just furniture:
+ *  walls sat at 46 for four fix rounds and escaped the check entirely, because the assertion
+ *  iterated `area.furniture` and a wall is not a Furniture. A character walking the north strip
+ *  was drawn completely behind them across 98% of the floor's width. */
+export const WALL_LIFT = MAX_LIFT;
+/** The whole south edge of a room is walkable, so a full-height south wall would draw over any
+ *  character walking along it. It stays a low ledge that only clips their feet. */
+export const FRONT_WALL_LIFT = 12;
+export const CHAIR_LIFT = 18;
+/** Every height the renderer lifts something by, so one assertion can cover all of them. */
+export const ALL_LIFTS: Record<string, number> = { ...LIFT, wall: WALL_LIFT, frontWall: FRONT_WALL_LIFT, chair: CHAIR_LIFT };
+
 export function exitAt(area: Area, x: number, y: number): Exit | undefined {
   return area.exits.find(e => x >= e.rect.x && x <= e.rect.x + e.rect.width && y >= e.rect.y && y <= e.rect.y + e.rect.height);
 }

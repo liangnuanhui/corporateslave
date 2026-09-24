@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AREAS, HEAD_TOP, MAX_LIFT, corridor, meeting, storage, canStandAt, exitAt, moveIn, type AreaId } from '../shared/world/index.js';
+import { ALL_LIFTS, AREAS, HEAD_TOP, MAX_LIFT, corridor, meeting, storage, canStandAt, exitAt, moveIn, type AreaId } from '../shared/world/index.js';
 import { idleInput, type Input } from '../shared/game.js';
 
 interface TickState { area: AreaId; x: number; y: number; vy: number; face: number; cooldown: number }
@@ -58,16 +58,18 @@ test('leaving a room lands back in the corridor outside the trigger', () => {
   }
 });
 
-test('every furniture item gets a render height, and none is tall enough to swallow a character', () => {
+test('nothing the renderer lifts is tall enough to swallow a character', () => {
+  // Everything that gets lifted, not just furniture — walls escaped this check for four fix
+  // rounds by living in the renderer while the assertion iterated `area.furniture`.
+  for (const [what, lift] of Object.entries(ALL_LIFTS)) {
+    // The hard invariant: nobody may be erased outright.
+    assert.ok(HEAD_TOP - lift > 0, `${what} lift=${lift}，会把北侧的人整个盖住`);
+    // The cap: raising a value past it has to be a deliberate edit to MAX_LIFT, which is
+    // where the rule — and what you give up by raising it — is written down.
+    assert.ok(lift <= MAX_LIFT, `${what} lift=${lift} 超过上限 ${MAX_LIFT}，北侧的人只剩 ${(HEAD_TOP - lift).toFixed(1)}px`);
+  }
   for (const area of Object.values(AREAS)) {
-    for (const item of area.furniture) {
-      assert.equal(typeof item.lift, 'number', `${area.id} 的 ${item.kind} 没有 lift`);
-      // The hard invariant: nobody may be erased outright.
-      assert.ok(HEAD_TOP - item.lift! > 0, `${area.id} 的 ${item.kind} lift=${item.lift}，会把北侧的人整个盖住`);
-      // The cap: raising a value past it has to be a deliberate edit to MAX_LIFT, which is
-      // where the rule — and what you give up by raising it — is written down.
-      assert.ok(item.lift! <= MAX_LIFT, `${area.id} 的 ${item.kind} lift=${item.lift} 超过上限 ${MAX_LIFT}，北侧的人只剩 ${(HEAD_TOP - item.lift!).toFixed(1)}px`);
-    }
+    for (const item of area.furniture) assert.equal(typeof item.lift, 'number', `${area.id} 的 ${item.kind} 没有 lift`);
   }
   // How legible the remaining band has to be is a judgement call, so pin every value instead:
   // a silent edit to the table is then caught whichever way it moves.

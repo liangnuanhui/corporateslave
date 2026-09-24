@@ -91,14 +91,28 @@ test('room positions project inside their corridor footprint', () => {
   }
 });
 
-test('rooms are walkable from their spawn to their exit', () => {
+test('every spawn point in every room can reach that room\'s exit', () => {
+  // pickSpawn returns any spawn point and systematically favours the ones furthest from other
+  // players, so checking only index 0 would let a furniture edit strand a real player with the
+  // suite still green. Asking whether the exit is *reachable* — a flood fill over standable
+  // positions — is also the honest question: a greedy walk failing only means the walk was naive,
+  // not that the player is stuck. storage's centre spawn is exactly that case.
+  const STEP = 7; // half the collision radius, so no obstacle thinner than the character is jumped
   for (const room of [meeting, storage]) {
-    const p = { ...room.spawnPoints[0], face: 1, vy: 0 };
-    const target = room.exits[0].rect;
-    const goalY = target.y + target.height / 2;
-    for (let i = 0; i < 200 && !exitAt(room, p.x, p.y); i++) {
-      moveIn(room, p, { ...idleInput(), left: p.x > room.width / 2 + 4, right: p.x < room.width / 2 - 4, up: p.y > goalY, down: p.y < goalY });
+    for (const spawn of room.spawnPoints) {
+      const seen = new Set<string>();
+      const queue = [spawn];
+      let reached = false;
+      for (let i = 0; i < queue.length && !reached; i++) {
+        const { x, y } = queue[i];
+        for (const [dx, dy] of [[STEP, 0], [-STEP, 0], [0, STEP], [0, -STEP]]) {
+          const nx = x + dx, ny = y + dy, key = `${Math.round(nx)},${Math.round(ny)}`;
+          if (seen.has(key) || !canStandAt(room, nx, ny)) continue;
+          seen.add(key); queue.push({ x: nx, y: ny });
+          if (exitAt(room, nx, ny)) { reached = true; break; }
+        }
+      }
+      assert.ok(reached, `${room.name} 的出生点 (${spawn.x},${spawn.y}) 到不了出口`);
     }
-    assert.ok(exitAt(room, p.x, p.y), `${room.name} 从出生点走不到门口`);
   }
 });
