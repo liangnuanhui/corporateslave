@@ -15,6 +15,25 @@ Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eed
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
 
+## 删掉的面板留下的列 — 2026-09-24
+
+画面整体偏左、右侧空一大条，原因是 `.game-layout` 上那条两栏规则还活着：
+
+    .game-layout{display:grid;grid-template-columns:minmax(0,1fr) 284px;gap:18px}
+
+284px 是右侧任务栏的宽度，面板三个提交前就删了，这条规则没人动。中间我把 `.game-layout`
+改成 `display:block`，正好把它压住了；再后来为了做垂直布局又改回 `display:grid`——那条
+template 就复活了，替一个不存在的面板留出一整列（1450 以上还是 310px，1150 以下 245px）。
+
+已删除这四条死规则，`.game-layout` 现在只有一条定义。
+
+规则：**删掉一个元素时，把只为它存在的样式一起删掉。** 留着不会立刻出事，它会等到某次
+无关的改动把它重新激活——那时候症状和原因之间已经隔了好几个提交，很难联想到一起。
+另外：`display:block` 这类「顺手压住」不算删除，它只是让死规则暂时不生效。
+
+实测 72 组窗口尺寸（含 1150 / 1450 两个断点两侧）：画面中心与窗口中心偏差 0，比例 1.600，
+纵向溢出 0。
+
 ## 页面高度不再靠算 — 2026-09-24
 
 画面独占整行之后，它的高度一度写成 `calc(100dvh - 148px)`，148 是量出来的「页面其余部分」
