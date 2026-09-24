@@ -76,8 +76,10 @@ footer{padding:11px 0 13px}
 }
 
 /* Opening: a full-screen overlay shown once per page load, before the game canvas means anything. */
-.site-map{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:24px;background:#11151cf5}
-.site-map-card{width:min(640px,100%);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:36px 32px;text-align:center;box-shadow:0 30px 90px #000a}
+.site-map{position:fixed;inset:0;z-index:200;background:#11151cf5}
+/* left is set inline (see site-map.ts) to the live centre of .stage, not the viewport; top:50% here
+   is the vertical half of that same centring, which .stage's own placement doesn't affect. */
+.site-map-card{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(640px,calc(100% - 48px));background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:36px 32px;text-align:center;box-shadow:0 30px 90px #000a}
 .site-map-eyebrow{margin:0 0 8px;font-size:12px;letter-spacing:1px;color:var(--muted)}
 .site-map-title{margin:0 0 28px;font-size:clamp(20px,2.6vw,28px);font-weight:900;color:#f5eedc}
 .site-map-stage{position:relative;width:100%;max-width:520px;margin:0 auto}

@@ -21,7 +21,7 @@ const site = (id: string, name: string, detail: string, lon: number, lat: number
   ({ id, name, detail, open, ...project(lon, lat) });
 
 export const SITES: Site[] = [
-  site('beijing', '北京总部', '摸鱼科技 · 1F', 116.4, 39.9, true),
-  site('shanghai', '上海办', '筹备中', 121.5, 31.2, false),
+  site('beijing', '北京总部', '筹备中', 116.4, 39.9, false),
+  site('shanghai', '上海办', '摸鱼科技 · 1F', 121.5, 31.2, true),
   site('guangzhou', '广州办', '筹备中', 113.3, 23.1, false),
 ];

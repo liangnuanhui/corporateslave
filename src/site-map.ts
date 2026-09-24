@@ -54,7 +54,26 @@ export function showSiteMap(): Promise<string> {
     const host = document.createElement('div');
     host.innerHTML = siteMapMarkup;
     const overlay = host.firstElementChild as HTMLElement;
+    const card = overlay.querySelector<HTMLElement>('.site-map-card')!;
+    // The overlay is the doorway into the game picture (`.stage`), not the whole page — it should
+    // centre on that, not on the viewport, or the visual weight jumps sideways the instant it
+    // closes (`.stage` sits left of centre because the fixed-width 下班计划 panel shares the row).
+    // Measured live, not hardcoded: `.stage` is a grid item whose width — and so whose centre —
+    // depends on the viewport and on `main`'s own max-width.
+    const align = () => {
+      const stage = document.querySelector('.stage');
+      if (!stage) return;
+      const target = stage.getBoundingClientRect().left + stage.getBoundingClientRect().width / 2;
+      // Below the layout's two-column breakpoint (~851–950px window width) the mission panel still
+      // sits beside a now-narrow stage, pushing its centre far enough left that a stage-centred card
+      // would clip past the viewport's own left edge. Clamp to keep it on-screen there; every width
+      // this project treats as a real desktop target leaves the target well inside these bounds.
+      const half = card.getBoundingClientRect().width / 2, margin = 16;
+      card.style.left = `${Math.min(Math.max(target, half + margin), window.innerWidth - half - margin)}px`;
+    };
     document.body.appendChild(overlay);
+    align();
+    window.addEventListener('resize', align);
     let done = false;
     // A key or a click anywhere finishes the screen at once — the only open site is the sole
     // sensible destination either way, so "skip" and "pick the open site" resolve to the same id.
@@ -62,6 +81,7 @@ export function showSiteMap(): Promise<string> {
       if (done) return; done = true;
       window.removeEventListener('keydown', skip);
       window.removeEventListener('pointerdown', skip);
+      window.removeEventListener('resize', align);
       overlay.remove();
       resolve(id);
     };
