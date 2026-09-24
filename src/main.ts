@@ -1,7 +1,6 @@
 import './style.css';
 import { Network } from './network';
 import { createGame } from './game';
-import { roomAt, AREAS } from '../shared/world';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
 import { showSiteMap } from './site-map';
 import { ROLES, WEAPONS, damageFor, ORG_NAME } from '../shared/game';
@@ -24,7 +23,6 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       <div id="game"></div>
       ${mapPanelMarkup}
       <div class="hud"><div class="portrait"></div><div class="hud-details"><div class="health-row"><span class="heart">♥</span><div class="health-track"><div id="health-fill"></div><strong id="health-label">100 / 100</strong></div></div><div class="coins"><span class="coin-icon">₵</span><strong id="coins">—</strong><span>下班积分</span></div></div></div>
-      <div class="zone-label" id="zone-label">${ORG_NAME} · 1F · 办公室全景</div>
       <div class="stage-message" id="stage-message" hidden></div>
       <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><div class="stage-actions"><button id="nav-shop" aria-label="装备商店">${icon('bag')}<span>装备商店</span></button><button id="invite" aria-label="复制邀请链接">${icon('share')}<span>邀请同事</span></button><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div></div>
     </section></div>
@@ -104,9 +102,8 @@ function renderProfile() {
 function renderSnapshot() {
   const snap = network.snapshot, p = network.profile;
   const actor = snap?.players.find(a => a.id === p?.id);
-  // 房间号对玩家没有意义，这里显示的是这家公司的名字 + 你此刻所在的房间。
-  const place = actor ? (actor.area === 'corridor' ? roomAt(actor.x, actor.y)?.name || '公共走廊' : AREAS[actor.area].name) : '办公室全景';
-  $('zone-label').textContent = `${ORG_NAME} · 1F · ${place}`;
+  // 「我在哪」不再单独占一块：楼层抬头写着分部与楼层，每个房间的地面上写着自己的名字，
+  // 小地图的标题也跟着当前区域走。再挂一个牌子只是重复，还会压住左上角那片办公室。
   $('nav-shop').classList.toggle('muted', !(actor && actor.area === 'storage')); // purely visual — click still works and explains where to go
   const hp = actor?.hp ?? 100;
   $('health-label').textContent = `${hp} / 100`; $('health-fill').style.width=`${hp}%`;
