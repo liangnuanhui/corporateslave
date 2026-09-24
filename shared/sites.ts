@@ -1,3 +1,5 @@
+import { ORG_NAME } from './game.js';
+
 export interface Site { id: string; name: string; detail: string; x: number; y: number; open: boolean }
 
 /** Mainland bounding box in degrees — 73–135°E covers Xinjiang to the northeast coast, 18–53°N
@@ -22,6 +24,6 @@ const site = (id: string, name: string, detail: string, lon: number, lat: number
 
 export const SITES: Site[] = [
   site('beijing', '北京总部', '筹备中', 116.4, 39.9, false),
-  site('shanghai', '上海办', '摸鱼科技 · 1F', 121.5, 31.2, true),
+  site('shanghai', '上海办', `${ORG_NAME} · 1F`, 121.5, 31.2, true),
   site('guangzhou', '广州办', '筹备中', 113.3, 23.1, false),
 ];

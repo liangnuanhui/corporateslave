@@ -1,4 +1,5 @@
 import { SITES, LON_RANGE, LAT_RANGE, project, type Site } from '../shared/sites';
+import { ORG_NAME } from '../shared/game';
 
 const marker = (site: Site) => `<button type="button" class="site-dot ${site.open ? 'open' : 'closed'}" data-site="${site.id}" style="left:${site.x}%;top:${site.y}%" ${site.open ? '' : 'tabindex="-1" aria-disabled="true"'} aria-label="${site.name}${site.open ? '' : `，${site.detail}`}"><span class="site-dot-ring"></span><span class="site-dot-tag"><strong>${site.name}</strong><small>${site.detail}</small></span></button>`;
 
@@ -28,7 +29,7 @@ const outlinePath = 'M' + OUTLINE.map(([lon, lat]) => { const p = project(lon, l
 export const siteMapMarkup = `
   <div class="site-map" id="site-map">
     <div class="site-map-card">
-      <p class="site-map-eyebrow">摸鱼科技 · 全国网点</p>
+      <p class="site-map-eyebrow">${ORG_NAME} · 全国网点</p>
       <h1 class="site-map-title">今天，去哪？</h1>
       <div class="site-map-stage" style="aspect-ratio:${MAP_ASPECT_RATIO}">
         <svg class="site-map-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">

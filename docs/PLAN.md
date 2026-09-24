@@ -10,7 +10,7 @@ Current scope: browser multiplayer, fictional company and characters, and an ove
 5. Browser QA with two identities; integration tests for room isolation, unauthorized access, combat, persistence and duplicate rewards.
 
 ## Visual system
-Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eedc foreground, muted #8e9ca8, mint #a6e8c2 accent. The page is now the game picture and nothing else: a full-width 16:10 canvas whose width is capped so its height fits the viewport, with the identity chip, key hints, connection state and the closing line in one strip beneath it. Native DOM controls and accessible dialogs; generated office and atlas artwork. Main copy: 牛马上班 处处战场; 新阳光基金会; 装备商店; 邀请同事; 今天，去哪？; 摸鱼科技; 生死看淡，不服就干.
+Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eedc foreground, muted #8e9ca8, mint #a6e8c2 accent. The page is now the game picture and nothing else: a full-width 16:10 canvas whose width is capped so its height fits the viewport, with the identity chip, key hints, connection state and the closing line in one strip beneath it. Native DOM controls and accessible dialogs; generated office and atlas artwork. Main copy: 牛马上班 处处战场; 新阳光基金会; 装备商店; 邀请同事; 今天，去哪？; 生死看淡，不服就干. The company has exactly one name and one definition — `ORG_NAME` in shared/game.ts. index.html's `<title>` is the sole static copy, because it is read before any module runs; tests/copy.test.ts pins it to the constant and fails if the old name reappears anywhere under src/ or shared/.
 
 ## Bounds
 No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
@@ -24,7 +24,8 @@ No real-person targeting, office scans, PvP, chat, trading, offline AI, or produ
   按钮不在储物间时变灰，点了仍然会告诉你该去哪。
 - **连接状态与延迟** 移到画面下方的键位说明那一行。
 - **房间号不再显示。** 一个 Colyseus 房间就是一家公司，界面上显示的是这家公司的名字
-  （`ORG_NAME`，见 shared/game.ts），MVP 只有一家：新阳光基金会。画面左上角的地点牌现在读作
+  （`ORG_NAME`，见 shared/game.ts），MVP 只有一家：新阳光基金会——全站唯一的公司名，注册框、
+  全国网点地图、上海办副标题、页面标题都读它。画面左上角的地点牌现在读作
   「新阳光基金会 · 1F · 公共走廊」。邀请链接仍然带房间号，只是玩家看不到它。
 - **副本入口全部删除**：主按钮、走廊最右端按 E 的触发点、返回办公室按钮、`?zone=dungeon` 深链
   都没了，join() 只连办公室。server 仍然认 `zone: 'dungeon'`，场景里也还留着副本的绘制分支，
