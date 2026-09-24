@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AREAS, canStandAt, exitAt, randomStandablePoint, corridor, type Area } from '../shared/world/index.js';
-import { inMelee, meleeHits, NPC } from '../shared/game.js';
+import { AREAS, canStandAt, exitAt, randomStandablePoint, spotAtDesk, corridor, meeting, storage, type Area } from '../shared/world/index.js';
+import { inMelee, meleeHits, nextDoing, NPC, NPC_LINES } from '../shared/game.js';
 
 test('a random target spot is always standable and never on a door trigger', () => {
   for (const area of Object.values(AREAS)) {
@@ -68,4 +68,42 @@ test('a swing only reaches live targets standing in the same room', () => {
   assert.equal(meleeHits(me, [at({ x: 700 })]).length, 0, '超出半径不该打得到');
   assert.equal(meleeHits(me, [at({ x: 300 })]).length, 0, '背后不该打得到');
   assert.equal(meleeHits(me, [at({}), at({ x: 470, y: 470 }), at({ area: 'meeting' })]).length, 1, '只返回真正打中的那些');
+});
+
+test('a desk spot is beside real furniture, and the corridor honestly has none', () => {
+  const deskLike = (area: Area) => area.furniture.filter(f => f.kind === 'desk' || f.kind === 'table' || f.kind === 'counter');
+  for (const area of Object.values(AREAS)) {
+    for (let i = 0; i < 300; i++) {
+      const spot = spotAtDesk(area);
+      if (!spot) continue;
+      assert.ok(canStandAt(area, spot.x, spot.y), `${area.name} 的工位站不住`);
+      assert.equal(exitAt(area, spot.x, spot.y), undefined, `${area.name} 的工位压在门口触发器上`);
+      // 「桌边」必须真的贴着某张桌子，否则这个函数只是另一个随机点生成器。
+      assert.ok(deskLike(area).some(d => Math.abs(spot.x - (d.x + d.width / 2)) <= d.width / 2 + area.radius + 10
+        && Math.abs(spot.y - (d.y + d.height / 2)) <= d.height / 2 + area.radius + 10), `${area.name} 的工位离所有桌子都太远`);
+    }
+  }
+  // 房间里有真的工位：大会议室的长桌、储物间的装备台。
+  for (const area of [meeting, storage]) assert.ok(spotAtDesk(area), `${area.name} 应该找得到工位`);
+  // 走廊有 19 件桌类家具，却一个工位都没有——它们全是画在六个房间方框内部的装饰，
+  // 而那些方框在走廊平面上是实心障碍，四条边都站不住。所以这里必须返回 undefined，
+  // 让调用方改成「玩手机」，而不是把人放进墙里假装那是工位。
+  assert.ok(deskLike(corridor).length > 10, '走廊本来就有很多桌子，否则下面验的不是这件事');
+  assert.equal(spotAtDesk(corridor), undefined);
+});
+
+test('the colleague picks all three activities, walking most often', () => {
+  const counts: Record<string, number> = { walk: 0, desk: 0, phone: 0 };
+  for (let i = 0; i < 3000; i++) counts[nextDoing()]++;
+  for (const key of ['walk', 'desk', 'phone']) assert.ok(counts[key] > 100, `${key} 几乎抽不到 (${counts[key]}/3000)`);
+  assert.ok(counts.walk > counts.desk && counts.walk > counts.phone, '静止的同事看着像雕像，走动应该最常见');
+  // 边界：random() 的两个端点都要落在合法值上，不能返回 undefined。
+  assert.equal(nextDoing(() => 0), 'walk');
+  assert.equal(nextDoing(() => 0.999999), 'phone');
+});
+
+test('the boring lines are real, distinct sentences', () => {
+  assert.ok(NPC_LINES.length >= 6, '台词太少，几句话就开始重复');
+  assert.equal(new Set(NPC_LINES).size, NPC_LINES.length, '台词有重复');
+  for (const line of NPC_LINES) assert.ok(line.length >= 4 && line.length <= 16, `「${line}」长度不适合气泡`);
 });

@@ -69,6 +69,30 @@ export function projectTo(area: Area, x: number, y: number) {
   };
 }
 
+/** A standable spot right beside a desk-like piece of furniture — where someone at work stands.
+ *  Returns undefined when the area has no such furniture (储物间 is all shelves), so the caller
+ *  can fall back rather than pretending there is a 工位 in a store room. */
+export function spotAtDesk(area: Area, random: () => number = Math.random) {
+  const desks = area.furniture.filter(f => f.kind === 'desk' || f.kind === 'table' || f.kind === 'counter');
+  if (!desks.length) return undefined;
+  const gap = area.radius + 8;
+  // 从随机一张桌子开始，绕一圈全试过再放弃。走廊里有些桌子四面都靠着封闭房间的外框，
+  // 一张都够不到；只看随机挑中的那一张，就会在「明明有工位」的房间里返回 undefined。
+  const start = Math.floor(random() * desks.length);
+  for (let i = 0; i < desks.length; i++) {
+    const d = desks[(start + i) % desks.length];
+    const sides = [
+      { x: d.x + d.width / 2, y: d.y + d.height + gap },
+      { x: d.x + d.width / 2, y: d.y - gap },
+      { x: d.x - gap, y: d.y + d.height / 2 },
+      { x: d.x + d.width + gap, y: d.y + d.height / 2 },
+    ];
+    const spot = sides.find(c => canStandAt(area, c.x, c.y) && !exitAt(area, c.x, c.y));
+    if (spot) return spot;
+  }
+  return undefined;
+}
+
 export function canStandAt(area: Area, x: number, y: number) {
   const r = area.radius, b = area.bounds;
   if (x < b.x + r || x > b.x + b.width - r || y < b.y + r || y > b.y + b.height - r) return false;
@@ -98,14 +122,14 @@ export function randomStandablePoint(area: Area, random: () => number = Math.ran
   return { x: fallback.x, y: fallback.y };
 }
 
-export function moveIn(area: Area, actor: { x: number; y: number; vy: number; face: number }, input: Pick<Input, 'left' | 'right' | 'up' | 'down'>, dt = 1 / 30) {
+export function moveIn(area: Area, actor: { x: number; y: number; vy: number; face: number }, input: Pick<Input, 'left' | 'right' | 'up' | 'down'>, dt = 1 / 30, speed = area.speed) {
   const dx = Number(input.right) - Number(input.left), dy = Number(!!input.down) - Number(!!input.up);
   const length = Math.hypot(dx, dy);
   actor.vy = 0;
   if (!length) return;
   if (dx) actor.face = dx;
   // Substeps prevent tunnelling even if callers use a larger frame interval.
-  const distance = area.speed * Math.min(Math.max(dt, 0), .15);
+  const distance = speed * Math.min(Math.max(dt, 0), .15);
   const steps = Math.ceil(distance / (area.radius / 2));
   for (let i = 0; i < steps; i++) {
     const x = actor.x + dx / length * distance / steps;

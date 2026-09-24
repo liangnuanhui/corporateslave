@@ -8,7 +8,20 @@ import { RENDER_SCALE, TEXT_RASTER } from './render/dpr';
 import { OfficeCamera } from './office-camera';
 import { TRANSITION_TIMEOUT_MS, gateTransition, shouldStartFadeOut } from './office-transition';
 
-interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse }
+/** 俯视下这一摞浮层的高度，从人往上数。每层都是 origin(.5, 1)，向上长，所以每层的 y 就是
+ *  它的底边，上一层必须整个让开下一层的高度。
+ *
+ *  历史：血条最早写在 y-(height/2+12)，和名牌深度相同又位置重叠，屏幕上根本看不见——是数
+ *  截图里的紫色像素才发现的。改成 52 之后量出来血条占 y323–326、名牌顶边在 y327：紧贴，
+ *  没有重叠，但小缩放下两条挤在一起像一条。62 是让它们之间留出一道看得见的缝。
+ *  （52 不是 bug，只是难看；写清楚免得下次有人以为改它能修什么。）
+ *
+ *  这三个数是同一件事的三段，改一个就得跟着看另外两个，所以放在一起。 */
+const OFFICE_LABEL_UP = 26;   // 名牌底边
+const OFFICE_BAR_UP = 62;     // 血条（5px 高），整个在名牌顶边 y-53 之上
+const OFFICE_BUBBLE_UP = 70;  // 气泡底边，在血条之上
+
+interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse; bubble: Phaser.GameObjects.Text }
 export class OfficeScene extends Phaser.Scene {
   private visuals = new Map<string, Visual>();
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
@@ -120,7 +133,7 @@ export class OfficeScene extends Phaser.Scene {
       // is deliberately delayed behind the fade curtain. Emitting here — exactly when the camera
       // actually re-configures — is the one moment the two are guaranteed to agree.
       if (office) this.network.emit('area', this.currentArea);
-      for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); }
+      for (const v of this.visuals.values()) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); v.bubble.destroy(); }
       this.visuals.clear(); this.resetInput();
       if (opening) {
         // The opening's whole point: land the push on wherever the server actually spawned us.
@@ -161,7 +174,7 @@ export class OfficeScene extends Phaser.Scene {
     // 否则它会以上一个房间的坐标留在这一间的地板上。
     const targets = office ? snap.enemies.filter(e => e.area === this.currentArea) : snap.enemies;
     const ids = new Set([...visible.map(p=>p.id), ...targets.map(e=>e.id)]);
-    for (const [id, v] of this.visuals) if (!ids.has(id)) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); this.visuals.delete(id); }
+    for (const [id, v] of this.visuals) if (!ids.has(id)) { v.sprite.destroy(); v.label.destroy(); v.health.destroy(); v.shadow.destroy(); v.bubble.destroy(); this.visuals.delete(id); }
     for (const player of visible) this.renderActor(player, false, time, delta);
     for (const enemy of targets) this.renderActor(enemy, true, time, delta);
   }
@@ -176,7 +189,9 @@ export class OfficeScene extends Phaser.Scene {
       const sprite = this.add.sprite(actor.x, actor.y, office ? 'office-avatar' : 'atlas', office ? undefined : enemy ? 8 : 0).setOrigin(.5, office ? .5 : 1);
       const label = this.add.text(actor.x, actor.y - height - 18, '', { fontSize: office ? '16px' : '15px', fontFamily: 'system-ui, sans-serif', color: '#f5eedc', backgroundColor: '#111820dd', padding: {x: 7, y: 4}, resolution: TEXT_RASTER }).setOrigin(.5,1);
       label.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
-      const health = this.add.graphics(); v = { sprite, label, shadow, health }; this.visuals.set(actor.id, v);
+      const bubble = this.add.text(actor.x, actor.y, '', { fontSize: '15px', fontFamily: 'system-ui, sans-serif', color: '#2c3b30', backgroundColor: '#eef4e2f2', padding: { x: 9, y: 6 }, resolution: TEXT_RASTER }).setOrigin(.5, 1).setVisible(false);
+      bubble.texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
+      const health = this.add.graphics(); v = { sprite, label, shadow, health, bubble }; this.visuals.set(actor.id, v);
     }
     const my = actor.id === this.network.profile?.id;
     const blend = 1 - Math.exp(-Math.min(delta, 100) / (my ? 28 : 55));
@@ -192,17 +207,20 @@ export class OfficeScene extends Phaser.Scene {
     v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : enemy && office ? 0xf0c49c : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
     // Oblique depth: whoever stands lower on the floor is in front. Labels never take part.
     const depth = office ? v.sprite.y + 12 : 20;
-    v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000);
-    v.label.setText(actor.name + (my ? ' · 你' : '') + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? 26 : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
+    v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000); v.bubble.setDepth(10001);
+    // 在干什么直接写进名牌：办公室里所有人用的是同一张贴图，没有姿势可以区分「在工位」和「玩手机」。
+    const doing = enemy && actor.hp ? ({ desk: ' · 在工位', phone: ' · 玩手机', walk: ' · 溜达中' } as Record<string, string>)[actor.action] ?? '' : '';
+    v.label.setText(actor.name + (my ? ' · 你' : '') + doing + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_LABEL_UP : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
     v.health.clear();
     // 俯视时精灵是中心对齐的（origin .5/.5），侧视是底部对齐，血条的基准线因此不同。
     if (enemy && actor.hp > 0) {
-      // 名牌在俯视下贴在 y-26（origin .5/1，所以它向上长），血条必须再往上让开整个名牌，
-      // 否则两者深度相同、正好互相盖住——第一次就是这样，屏幕上根本看不到血条。
-      const barY = office ? v.sprite.y - 52 : v.sprite.y - height - 9;
+      const barY = office ? v.sprite.y - OFFICE_BAR_UP : v.sprite.y - height - 9;
       v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32, barY, 64, 5);
       v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32, barY, 64*actor.hp/(actor as Enemy).maxHp, 5);
     }
+    const line = 'say' in actor ? (actor as Enemy).say : undefined;
+    v.bubble.setVisible(!!line && actor.hp > 0);
+    if (line) v.bubble.setText(line).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_BUBBLE_UP : height + 44));
     v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
   }
   /** Opening: hold the whole floor for a beat, then push into wherever the server spawned us.

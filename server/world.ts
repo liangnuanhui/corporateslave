@@ -1,18 +1,22 @@
 import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
-import { AREAS, corridor, exitAt, canStandAt, moveIn, randomStandablePoint, type Area, type AreaId } from '../shared/world/index.js';
-import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
+import { AREAS, corridor, exitAt, canStandAt, moveIn, randomStandablePoint, spotAtDesk, type Area, type AreaId } from '../shared/world/index.js';
+import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, NPC_LINES, nextDoing, type NpcDoing, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
 
 export const database = new Database();
 export const activeAccounts = new Map<string, string>();
 interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number }
 interface Monster extends Enemy { attackAt: number; actionUntil: number; respawnAt: number }
+/** 办公室那位同事的私有状态：只有服务器看得见，快照里只出 action / say。 */
+interface Colleague extends Monster { goal?: { x: number; y: number }; doing: NpcDoing; after?: NpcDoing; nextAt: number; walkUntil: number; sayAt: number; sayUntil: number; aloneSince: number; vy: number }
 
 export class WorldRoom extends Room {
   private zone: Zone = 'office';
   private players = new Map<string, Player>();
   private enemies: Monster[] = [];
+  /** 办公室那位同事。他也在 enemies 里，这个引用只是为了拿到他的私有状态。 */
+  private colleague?: Colleague;
   private tickNumber = 0;
   private elapsed = 0;
   private accumulator = 0;
@@ -33,8 +37,15 @@ export class WorldRoom extends Room {
     if (this.zone === 'dungeon') this.enemies = [
       dungeon('scope', '临时需求怪', 740, 70), dungeon('meeting', '无效会议怪', 970, 90), dungeon('overtime', '加班大魔王', 1160, 140),
     ];
-    // 办公室里放一个可打的同事：血量、所在房间、具体工位每次都重新抽。
-    else this.enemies = [this.placeColleague({ id: NPC.id, name: NPC.name, x: 0, y: 0, hp: 0, maxHp: 0, face: -1, action: 'idle', attackAt: 0, actionUntil: 0, respawnAt: 0, area: 'corridor' })];
+    // 办公室里放一个会自己上班的同事：血量、所在房间、具体位置每次都重新抽。
+    else {
+      this.colleague = this.placeColleague({
+        id: NPC.id, name: NPC.name, x: 0, y: 0, vy: 0, hp: 0, maxHp: 0, face: -1, action: 'idle',
+        attackAt: 0, actionUntil: 0, respawnAt: 0, area: 'corridor',
+        doing: 'idle', nextAt: 0, walkUntil: 0, sayAt: 0, sayUntil: 0, aloneSince: 0,
+      });
+      this.enemies = [this.colleague];
+    }
     this.onMessage('input', (client, data) => {
       const p = this.players.get(client.sessionId);
       if (!p || !data || !Number.isSafeInteger(data.seq) || data.seq < 0 || data.seq <= p.input.seq) return;
@@ -140,7 +151,7 @@ export class WorldRoom extends Room {
           // 又不至于让「站着打完一管血」变成不可能。
           const knocked = npc.x + p.face * 6;
           if (canStandAt(area, knocked, npc.y)) npc.x = knocked;
-          npc.action = npc.hp ? 'hurt' : 'dead'; npc.actionUntil = this.elapsed + 180;
+          npc.action = npc.hp ? 'hurt' : 'dead'; npc.actionUntil = this.elapsed + (npc.hp ? NPC.hurtPauseMs : 180);
           this.broadcast('hit', { id: npc.id, x: npc.x, y: npc.y - 34, damage });
           if (!npc.hp) {
             npc.respawnAt = this.elapsed + NPC.respawnMs;
@@ -158,11 +169,10 @@ export class WorldRoom extends Room {
         }
       }
     }
-    if (this.zone === 'office') {
-      for (const npc of this.enemies) {
-        if (npc.hp <= 0) { if (this.elapsed >= npc.respawnAt) this.placeColleague(npc); continue; }
-        if (npc.action === 'hurt' && this.elapsed > npc.actionUntil) npc.action = 'idle';
-      }
+    if (this.colleague) {
+      const npc = this.colleague;
+      if (npc.hp <= 0) { if (this.elapsed >= npc.respawnAt) this.placeColleague(npc); }
+      else this.tickColleague(npc);
     }
     if (this.zone === 'dungeon' && this.status === 'playing') {
       for (const enemy of this.enemies) {
@@ -203,23 +213,85 @@ export class WorldRoom extends Room {
     p.exitCooldown = this.elapsed + 400;
     client?.send('transition', { to: exit.to, name: AREAS[exit.to].name });
   }
-  /** 重新抽一次：哪个房间、房间里哪个位置、多少血。每次开房和每次被打倒后各调一次。 */
-  private placeColleague(npc: Monster): Monster {
+  /** 重新抽一次：哪个房间、房间里哪个位置、多少血。开房、被打倒后、以及没人看见时换房间各调一次。 */
+  private placeColleague(npc: Colleague, keepHp = false): Colleague {
     const ids = Object.keys(AREAS) as AreaId[];
     const area = AREAS[ids[Math.floor(Math.random() * ids.length)]];
     const spot = randomStandablePoint(area);
     npc.area = area.id; npc.x = spot.x; npc.y = spot.y; npc.face = Math.random() < .5 ? -1 : 1;
-    const steps = Math.floor((NPC.hpMax - NPC.hpMin) / NPC.hpStep) + 1;
-    npc.maxHp = NPC.hpMin + Math.floor(Math.random() * steps) * NPC.hpStep;
-    npc.hp = npc.maxHp; npc.action = 'idle'; npc.actionUntil = 0; npc.respawnAt = 0;
+    if (!keepHp) {
+      const steps = Math.floor((NPC.hpMax - NPC.hpMin) / NPC.hpStep) + 1;
+      npc.maxHp = NPC.hpMin + Math.floor(Math.random() * steps) * NPC.hpStep;
+      npc.hp = npc.maxHp;
+    }
+    npc.action = 'idle'; npc.doing = 'idle'; npc.goal = undefined; npc.after = undefined;
+    npc.actionUntil = 0; npc.respawnAt = 0; npc.nextAt = 0; npc.walkUntil = 0;
+    npc.say = undefined; npc.sayUntil = 0; npc.sayAt = 0; npc.aloneSince = this.elapsed;
     return npc;
+  }
+
+  /** 他自己上班的一拍：走动 / 回工位 / 玩手机，外加时不时说句废话。
+   *  挨打时整段跳过——边挨打边散步看着像没受伤，而且会把攻击者甩开。 */
+  private tickColleague(npc: Colleague) {
+    const area = AREAS[npc.area];
+    const watched = [...this.players.values()].some(p => !p.dropped && p.area === npc.area);
+    if (watched) npc.aloneSince = this.elapsed;
+    // 没人在场时才换房间：这样「他又跑到别的房间去了」永远不会被谁看成瞬移。
+    else if (this.elapsed - npc.aloneSince > NPC.relocateAfterMs) { this.placeColleague(npc, true); return; }
+
+    if (this.elapsed < npc.actionUntil) return;          // 受击僵直
+    if (npc.action === 'hurt') npc.action = npc.doing === 'walk' ? 'idle' : npc.doing;
+
+    if (this.elapsed >= npc.sayAt) {
+      npc.say = NPC_LINES[Math.floor(Math.random() * NPC_LINES.length)];
+      npc.sayUntil = this.elapsed + NPC.sayForMs;
+      npc.sayAt = this.elapsed + NPC.sayEveryMinMs + Math.random() * (NPC.sayEveryMaxMs - NPC.sayEveryMinMs);
+    }
+    if (npc.say && this.elapsed >= npc.sayUntil) npc.say = undefined;
+
+    if (npc.doing === 'walk' && npc.goal) {
+      const dx = npc.goal.x - npc.x, dy = npc.goal.y - npc.y;
+      const arrived = Math.hypot(dx, dy) < 12;
+      if (!arrived && this.elapsed <= npc.walkUntil) {
+        const before = { x: npc.x, y: npc.y };
+        moveIn(area, npc, { left: dx < -4, right: dx > 4, up: dy < -4, down: dy > 4 }, 1 / 30, NPC.speed);
+        npc.action = 'walk';
+        // 目的地是随机抽的，两点之间有没有家具抽不到——顶住不动就立刻作废这一程，
+        // 而不是贴着柜子边抖到超时。
+        if (Math.hypot(npc.x - before.x, npc.y - before.y) < .4) npc.walkUntil = 0;
+        return;
+      }
+      // 到了（或者走不动了）：摆出这一程本来要摆的姿势，走不到就随便站站。
+      npc.goal = undefined;
+      npc.doing = arrived && npc.after ? npc.after : 'idle';
+      npc.after = undefined;
+      npc.action = npc.doing;
+      npc.nextAt = this.elapsed + NPC.restMinMs + Math.random() * (NPC.restMaxMs - NPC.restMinMs);
+      return;
+    }
+    if (this.elapsed < npc.nextAt) return;
+
+    const doing = nextDoing();
+    // 回工位得真的有工位：走廊那 19 张桌子全画在封闭房间的方框里，一张都够不到（见 spotAtDesk），
+    // 抽到「回工位」而没有工位时，改成玩手机，而不是把人放进墙里假装那是工位。
+    const desk = doing === 'desk' ? spotAtDesk(area) : undefined;
+    const goal = doing === 'walk' ? randomStandablePoint(area) : desk;
+    if (goal) {
+      npc.goal = goal; npc.doing = 'walk'; npc.action = 'walk';
+      npc.after = doing === 'walk' ? 'idle' : 'desk';
+      npc.face = goal.x < npc.x ? -1 : 1;
+      npc.walkUntil = this.elapsed + NPC.walkTimeoutMs;
+      return;
+    }
+    npc.doing = 'phone'; npc.action = 'phone';
+    npc.nextAt = this.elapsed + NPC.restMinMs + Math.random() * (NPC.restMaxMs - NPC.restMinMs);
   }
 
   private snapshot(): Snapshot {
     return {
       roomId: this.roomId, zone: this.zone, tick: this.tickNumber, status: this.status, wave: 1,
       players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, role: p.role, x: p.x, y: p.y, vy: p.vy, face: p.face, hp: p.hp, weapon: p.weapon, action: p.action, ack: p.ack, area: p.area })),
-      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action, area: e.area })),
+      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action, area: e.area, say: e.say })),
     };
   }
   private async shop(client: Client, message: { weapon?: string }) {

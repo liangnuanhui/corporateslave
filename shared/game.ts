@@ -19,7 +19,7 @@ export type Zone = 'office' | 'dungeon';
 export interface Profile { id: string; username: string; name: string; role: RoleId; coins: number; weapon: WeaponId; owned: WeaponId[]; clears: number }
 export interface Input { left: boolean; right: boolean; up: boolean; down: boolean; jump: boolean; attack: boolean; seq: number }
 export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number; area: AreaId }
-export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string; area: AreaId }
+export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string; area: AreaId; say?: string }
 export interface Snapshot { roomId: string; zone: Zone; tick: number; players: Actor[]; enemies: Enemy[]; status: 'playing' | 'complete'; wave: number }
 export const idleInput = (): Input => ({ left: false, right: false, up: false, down: false, jump: false, attack: false, seq: 0 });
 export function move(actor: Pick<Actor, 'x' | 'y' | 'vy' | 'face'>, input: Input, dt = WORLD.tick) {
@@ -58,4 +58,37 @@ export function meleeHits<T extends { hp: number; area: AreaId; x: number; y: nu
 }
 
 /** MVP 只有一个可打的目标：一位血量和工位都随机的同事。名字是虚构的。 */
-export const NPC = { id: 'colleague', name: '刘正超', hpMin: 60, hpMax: 180, hpStep: 10, respawnMs: 8000 };
+export const NPC = {
+  id: 'colleague', name: '刘正超',
+  hpMin: 60, hpMax: 180, hpStep: 10, respawnMs: 8000,
+  speed: 96,          // 比玩家(235)慢得多：他在上班，不是在赶路
+  restMinMs: 4000, restMaxMs: 11000,
+  walkTimeoutMs: 9000, // 走不到就换个目的地——路上有没有家具是抽不到的
+  hurtPauseMs: 1200,   // 挨打时停下来，不是边挨打边散步
+  sayEveryMinMs: 7000, sayEveryMaxMs: 16000, sayForMs: 4200,
+  /** 没有任何玩家在他那个区域时，隔这么久换一个房间——没人看见，所以不会出现“瞬移”。 */
+  relocateAfterMs: 45000,
+};
+
+/** 他在干什么。渲染层只认这几个值，服务器之外没人构造它们。 */
+export type NpcDoing = 'walk' | 'desk' | 'phone' | 'idle';
+
+/** 上班时的废话。句子本身是这个游戏的笑点，所以放在共享层，客户端不重写一份。 */
+export const NPC_LINES = [
+  '这个需求我下周再看。',
+  '刚开完会，脑子是空的。',
+  '你们先聊，我看一眼手机。',
+  '这个得拉个群对齐一下。',
+  '我这边没问题，看别人。',
+  '还有十分钟下班了吧？',
+  '先这样，回头再说。',
+  '我在工位，随时能找我。',
+  '这个排期我确认一下。',
+  '收到，我这边同步下。',
+];
+
+/** 下一段要做什么：走动、回工位、或者掏出手机。走动占一半，因为静止的同事看着像雕像。 */
+export function nextDoing(random: () => number = Math.random): Exclude<NpcDoing, 'idle'> {
+  const roll = random();
+  return roll < .5 ? 'walk' : roll < .78 ? 'desk' : 'phone';
+}

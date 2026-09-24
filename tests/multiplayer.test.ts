@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
-import { NPC, damageFor, type Snapshot, type Profile } from '../shared/game.js';
+import { NPC, NPC_LINES, damageFor, type Snapshot, type Profile } from '../shared/game.js';
 import { AREAS, corridor, CORRIDOR_ROOMS, canStandAt, doorway, exitAt, roomAt } from '../shared/world/index.js';
 
 const base='http://127.0.0.1:2568';
@@ -24,7 +24,7 @@ async function leave(room:Room){if(room.connection.isOpen)await room.leave();}
 async function register(username:string){ const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:'mvp-test-password',name:username,role:'rookie'})});assert.equal(r.status,200);return r.json() as Promise<{token:string;profile:Profile}>; }
 function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string};hits:{id:string;damage:number}[]}={hits:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);});room.send('sync');return value;}
 
-test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:150000}, async()=>{
+test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:210000}, async()=>{
   const data=await mkdtemp(join(tmpdir(),'niuma-test-'));let server=await start(data);const rooms:Room[]=[];
   try {
     console.log('integration: server started');
@@ -162,20 +162,68 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
         await until(() => myself().area === home, 10000);
       }
-      await walkTo('x', target().x - 34);
-      await walkTo('y', target().y);
-      // 先往右轻推几帧：既走近，也把 face 定成 +1。俯视的 face 只有左右两个值，站在他左边
-      // 朝右才算面对他——不推这几帧，最后一次移动是纵向的，face 还停在上一次横向的方向上。
-      for (let i = 0; i < 3; i++) { ra.send('input', { right: true, seq: ++officeSeq }); await pause(34); }
+      // 「先对齐 x，再走 y」走不到他：他的落点是随机的，两点之间有没有货架完全不可控，而
+      // walkTo 只推一个轴——纵向被货架挡住时它会原地顶 10 秒然后超时。（全量跑三次里中过一次，
+      // 报的就是 `走到 y=581.39`：一个算出来的坐标，不是常量。）
+      // 两个轴一起推才能贴着障碍物滑过去，因为 moveIn 是分轴判定的：y 被挡住时 x 照样能走。
+      // 外加一个卡死检测：人正好在他正上方、中间隔着一个货架时，dx≈0 没有横向分量，
+      // 只有强行侧移才出得去。成功条件是「进入半径」而不是「走到某个精确坐标」。
+      // 观察到的行为，边走边记——单独等一遍会再花十几秒，而走过去本来就要那么久。
+      const seen = { say: new Set<string>(), doing: new Set<string>(), moved: 0 };
+      let mark = { x: target().x, y: target().y };
+      const observe = () => {
+        const t = target();
+        if (t.say) seen.say.add(t.say);
+        seen.doing.add(t.action);
+        const step = Math.hypot(t.x - mark.x, t.y - mark.y);
+        if (step > 2) { seen.moved += step; mark = { x: t.x, y: t.y }; }
+      };
+      // 他现在会自己走动，所以目标每一拍都要重读。「先对齐 x 再走 y」更是走不到：他的落点
+      // 随机，两点之间有没有货架完全不可控，而 walkTo 只推一个轴——纵向被挡住时它会原地顶
+      // 满 10 秒然后超时（全量跑三次中过一次，报的就是 `走到 y=581.39`，一个算出来的坐标）。
+      // 两个轴一起推才能贴着障碍物滑过去，因为 moveIn 是分轴判定的：y 被挡住时 x 照样能走。
+      // 卡死时的侧移必须垂直于主要行进方向：人在他正上方、中间隔着一个货架时，dx≈0，
+      // 沿 x 让开才出得去；反过来被一排桌子挡住时要沿 y 让开。第一版我朝「远离目标」的方向
+      // 侧移，结果是每次卡住就往后退一点，三百拍后离他 395px——比出发时还远。
+      const approach = async (within = 26) => {
+        let decision = { left: false, right: false }, sidestep = 0, flip = 1;
+        let last = { x: myself().x, y: myself().y }, still = 0;
+        for (let tick = 0; ; tick++) {
+          observe();
+          const dx = target().x - myself().x, dy = target().y - myself().y;
+          if (Math.hypot(dx, dy) <= within) { ra.send('input', { seq: ++officeSeq }); await pause(60); return; }
+          if (tick >= 500) throw new Error(`走不到 ${NPC.name} 身边，还差 (${dx.toFixed(0)},${dy.toFixed(0)})`);
+          if (tick % 10 === 0) {
+            const moved = Math.hypot(myself().x - last.x, myself().y - last.y);
+            still = moved < 4 ? still + 1 : 0;
+            last = { x: myself().x, y: myself().y };
+            if (still >= 2) { sidestep = 22; flip = -flip; still = 0; }
+          }
+          if (sidestep > 0) {
+            sidestep--;
+            const acrossX = Math.abs(dx) <= Math.abs(dy); // 主要在纵向走，就沿横向让开
+            ra.send('input', {
+              left: acrossX && flip < 0, right: acrossX && flip > 0,
+              up: !acrossX && flip < 0, down: !acrossX && flip > 0, seq: ++officeSeq,
+            });
+            await pause(34); continue;
+          }
+          if (tick % 15 === 0) decision = { left: dx < -8, right: dx > 8 };
+          ra.send('input', { ...decision, up: dy < -8, down: dy > 8, seq: ++officeSeq });
+          await pause(34);
+        }
+      };
+      await approach();
+      // 把 face 定向到他身上。俯视的 face 只有左右两个值，最后一步往往是纵向的，
+      // face 还停在上一次横向的方向上；|dx| < 20 时朝向不影响判定，所以只在他明显偏一侧时推。
+      const side = target().x - myself().x;
+      if (Math.abs(side) >= 8) for (let i = 0; i < 2; i++) { ra.send('input', { right: side > 0, left: side < 0, seq: ++officeSeq }); await pause(34); }
       const expected = damageFor(a.profile.role, a.profile.weapon);
       const startHp = target().hp;
       va.hits.length = 0; vb.hits.length = 0; va.notice = undefined;
       // 每次挥击前先补上距离——击退会把他推开，真人也是边打边跟上去的。
       const swing = async () => {
-        const dx = target().x - myself().x, dy = target().y - myself().y;
-        if (Math.hypot(dx, dy) > 24) for (let i = 0; i < 3; i++) {
-          ra.send('input', { right: dx > 8, left: dx < -8, down: dy > 8, up: dy < -8, seq: ++officeSeq }); await pause(34);
-        }
+        if (Math.hypot(target().x - myself().x, target().y - myself().y) > 26) await approach();
         ra.send('input', { attack: true, seq: ++officeSeq }); await pause(60);
         ra.send('input', { seq: ++officeSeq }); await pause(560);
       };
@@ -198,6 +246,23 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       assert.equal(exitAt(AREAS[back.area], back.x, back.y), undefined, '重新出现的位置压在门口触发器上');
       assert.ok(back.area !== downed.area || back.x !== downed.x || back.y !== downed.y, '重新出现时位置没有重新抽过');
       console.log(`integration: ${NPC.name} 在 ${AREAS[back.area].name} 重新上班，${back.hp} 血`);
+      // 他自己上班的那部分：会走动、会摆姿势、会说废话。上面走过去、打、等重生的过程里
+      // 已经连续采样了十几秒，这里只是把观察结果断言出来，不再另外空等。
+      // 采样窗口有两个坑，都踩过：
+      // 1) 退出条件必须把「走动」算进去。第一版只要「说过话 + 两种姿势」就收工，而他刚重新
+      //    出现时立刻说一句、姿势从 idle 变 walk，一拍就满足——循环在他真正迈开腿之前退出，
+      //    seen.moved 只有 24px。
+      // 2) 窗口要够长。他每段活动之间歇 4–11 秒，下一段有一半概率不是走动；连着抽中两三次
+      //    「玩手机」就是二三十秒不挪窝（实测独立探针：20 秒走了 569px，但那是运气好的一次）。
+      //    19 秒的窗口因此会偶发地什么都没看到——断言是真的，观察时间不够而已。
+      //    满足条件就立刻退出，所以正常情况下这里只花几秒。
+      for (let i = 0; i < 320 && (!seen.say.size || !seen.doing.has('walk') || seen.moved <= 60); i++) { observe(); await pause(120); }
+      assert.ok(seen.moved > 60, `${NPC.name} 应该会自己走动（累计只移动了 ${seen.moved.toFixed(0)}px）`);
+      assert.ok(seen.doing.has('walk'), `没看到他走动过 (${[...seen.doing].join('/')})`);
+      assert.ok([...seen.doing].some(d => d === 'desk' || d === 'phone' || d === 'idle'), `没看到他停下来做点什么 (${[...seen.doing].join('/')})`);
+      assert.ok(seen.say.size > 0, '没看到他说过任何话');
+      for (const line of seen.say) assert.ok(NPC_LINES.includes(line), `说了一句台词表里没有的话：${line}`);
+      console.log(`integration: ${NPC.name} 移动 ${seen.moved.toFixed(0)}px，姿势 ${[...seen.doing].join('/')}，说过 ${seen.say.size} 句`);
       // 这一段打完人可能停在任意一个房间里，而后面每一段都假设「人在走廊、用走廊坐标」。
       // 不还原这个前提，后面的 walkTo 会拿走廊坐标去房间的坐标系里走，看起来还一路“成功”。
       await returnToCorridor();
