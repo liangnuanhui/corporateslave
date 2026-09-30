@@ -73,19 +73,45 @@ export const NPC = {
 /** 他在干什么。渲染层只认这几个值，服务器之外没人构造它们。 */
 export type NpcDoing = 'walk' | 'desk' | 'phone' | 'idle';
 
-/** 上班时的废话。句子本身是这个游戏的笑点，所以放在共享层，客户端不重写一份。 */
+/** 他是个压着下属、毫无能力也毫无管理经验的领导。台词锁在「无能 / 甩锅 / 踢皮球」上——
+ *  不碰性别、地域、外貌。被点名的是真实用户自己起的昵称，玩笑和冒犯之间就隔着这条线。
+ *  句子本身是这个游戏的笑点，所以放在共享层，客户端不重写一份。 */
 export const NPC_LINES = [
-  '这个需求我下周再看。',
-  '刚开完会，脑子是空的。',
-  '你们先聊，我看一眼手机。',
+  // 甩锅
+  '我不干事情的，我就是个传话的。',
+  '这个我不会啊，你们谁懂谁来。',
+  '出了问题别找我，我当时就提过风险。',
+  // 画饼
+  '这些都在我脑子里，我理一理再跟你们说。',
+  '今年把这块做起来，明年就好办了。',
+  // 踢皮球
+  '大家想想怎么做啊，我听听。',
   '这个得拉个群对齐一下。',
-  '我这边没问题，看别人。',
-  '还有十分钟下班了吧？',
-  '先这样，回头再说。',
-  '我在工位，随时能找我。',
-  '这个排期我确认一下。',
-  '收到，我这边同步下。',
+  '你们先做吧，我下午还有事。',
+  '先按你的想法来，出了事我们再说。',
 ];
+
+/** 点名句。{name} 由服务器用全楼层在线玩家的昵称填充。 */
+export const NPC_MENTION_LINES = [
+  '这个 {name} 处理一下。',
+  '{name} 你说说，这个怎么弄。',
+  '{name} 辛苦一下，今天之内。',
+  '{name} 你年轻，多担待点。',
+];
+
+/** 他这次说什么。三成概率点名，但**名单为空时整类跳过**——这不是新发明：走廊没有工位，
+ *  spotAtDesk(corridor) 返回 undefined，抽到「回工位」就退化成「玩手机」。同样地，
+ *  没人可点就不点，而不是点一个叫 undefined 的同事。 */
+export function pickLine(names: readonly string[], random: () => number = Math.random): string {
+  if (names.length && random() < .3) {
+    const template = NPC_MENTION_LINES[Math.floor(random() * NPC_MENTION_LINES.length)];
+    const name = names[Math.floor(random() * names.length)];
+    // 替换函数，不是字符串：字符串参数里的 $& 会被当成「匹配到的内容」展开，
+    // 于是一个叫 $& 的玩家能让点名句里冒出字面量 {name}。
+    return template.replace('{name}', () => name);
+  }
+  return NPC_LINES[Math.floor(random() * NPC_LINES.length)];
+}
 
 /** 下一段要做什么：走动、回工位、或者掏出手机。走动占一半，因为静止的同事看着像雕像。 */
 export function nextDoing(random: () => number = Math.random): Exclude<NpcDoing, 'idle'> {

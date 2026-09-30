@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { AREAS, canStandAt, exitAt, randomStandablePoint, spotAtDesk, corridor, meeting, storage, type Area } from '../shared/world/index.js';
-import { inMelee, meleeHits, nextDoing, NPC, NPC_LINES } from '../shared/game.js';
+import { inMelee, meleeHits, nextDoing, NPC, NPC_LINES, NPC_MENTION_LINES, CHAT } from '../shared/game.js';
 
 test('a random target spot is always standable and never on a door trigger', () => {
   for (const area of Object.values(AREAS)) {
@@ -105,5 +105,10 @@ test('the colleague picks all three activities, walking most often', () => {
 test('the boring lines are real, distinct sentences', () => {
   assert.ok(NPC_LINES.length >= 6, '台词太少，几句话就开始重复');
   assert.equal(new Set(NPC_LINES).size, NPC_LINES.length, '台词有重复');
-  for (const line of NPC_LINES) assert.ok(line.length >= 4 && line.length <= 16, `「${line}」长度不适合气泡`);
+  for (const line of NPC_LINES) assert.ok([...line].length >= 4 && [...line].length <= CHAT.maxChars, `「${line}」长度不适合气泡`);
+  // 点名句要按最长昵称（注册框 maxlength=12）展开后再量，否则量的是模板不是实际会显示的话。
+  for (const t of NPC_MENTION_LINES) {
+    const worst = t.replace('{name}', () => '一'.repeat(12));
+    assert.ok([...worst].length <= CHAT.maxChars, `「${worst}」填入最长昵称后超过 ${CHAT.maxChars} 码点`);
+  }
 });
