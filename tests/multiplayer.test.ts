@@ -13,6 +13,11 @@ const pause=(ms:number)=>new Promise(r=>setTimeout(r,ms));
 // `what` is not decoration: this file has ~30 until() calls and a bare "Condition timed out"
 // names none of them, so a flaky run tells you nothing about which step gave up.
 async function until(fn:()=>boolean|Promise<boolean>, ms=8000, what='') { const deadline=Date.now()+ms; while(Date.now()<deadline){if(await fn())return;await pause(40);} throw new Error(`Condition timed out after ${ms}ms${what?`: ${what}`:''}`); }
+// 点名句是模板填了昵称之后的结果，不在 NPC_LINES 里，所以要按模板匹配。
+// 只此一份：{name} 这个占位格式将来一改，两处断言会一起跟上——而不是只跟上一处，
+// 另一处静默地匹配一个再也不会出现的旧格式（some() 恒为假，断言就废了但不会红）。
+const mentionLineRegexes = () => NPC_MENTION_LINES.map(t =>
+  new RegExp('^' + t.split('{name}').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.+)') + '$'));
 async function start(data:string) {
   const child=spawn(process.execPath,['--import','tsx','server/index.ts'],{env:{...process.env,PORT:'2568',DATA_DIR:data,DATABASE_URL:''},stdio:['ignore','pipe','pipe']});
   let logs=''; child.stdout?.on('data',d=>logs+=d);child.stderr?.on('data',d=>logs+=d);
@@ -267,8 +272,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       for (const [what, ok] of checks) assert.ok(ok(), `${NPC.name} 没有${what}（${detail()}）`);
       // 说的必须是台词表里的句子，或者某条点名模板填入昵称后的结果：服务器要是把别的字段
       // （名字、房间名）当台词发出去，上面「说过话」那条照样绿。
-      const mentionRe = NPC_MENTION_LINES.map(t =>
-        new RegExp('^' + t.split('{name}').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.+)') + '$'));
+      const mentionRe = mentionLineRegexes();
       for (const line of seen.say) {
         assert.ok(
           NPC_LINES.includes(line) || mentionRe.some(re => re.test(line)),
@@ -503,7 +507,7 @@ test('刘正超的话走 chat 事件，快照里不再有 say', {timeout:120000}
     assert.equal(line.kind,'say');
     assert.ok(line.ms>=CHAT.minMs&&line.ms<=CHAT.maxMs);
     // 台词要么是普通句原文，要么能匹配上某条点名模板（{name} 处换成任意昵称）。
-    const mentionRe=NPC_MENTION_LINES.map(t=>new RegExp('^'+t.split('{name}').map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('(.+)')+'$'));
+    const mentionRe=mentionLineRegexes();
     assert.ok(
       (NPC_LINES as readonly string[]).includes(line.text)||mentionRe.some(re=>re.test(line.text)),
       `陌生台词：${line.text}`,
