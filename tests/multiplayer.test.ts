@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client, type Room } from '@colyseus/sdk';
-import { NPC, NPC_LINES, damageFor, type Snapshot, type Profile } from '../shared/game.js';
+import { NPC, NPC_LINES, NPC_MENTION_LINES, CHAT, EMOTES, damageFor, type ChatEvent, type Snapshot, type Profile } from '../shared/game.js';
 import { AREAS, corridor, CORRIDOR_ROOMS, canStandAt, doorway, exitAt, roomAt } from '../shared/world/index.js';
 
 const base='http://127.0.0.1:2568';
@@ -22,7 +22,7 @@ async function start(data:string) {
 async function stop(child:ChildProcess){if(child.exitCode!==null)return; const closed=new Promise<void>(r=>child.once('exit',()=>r())); child.kill('SIGTERM');await closed;}
 async function leave(room:Room){if(room.connection.isOpen)await room.leave();}
 async function register(username:string){ const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:'mvp-test-password',name:username,role:'rookie'})});assert.equal(r.status,200);return r.json() as Promise<{token:string;profile:Profile}>; }
-function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string};hits:{id:string;damage:number}[]}={hits:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);});room.send('sync');return value;}
+function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string};hits:{id:string;damage:number}[];chats:ChatEvent[]}={hits:[],chats:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);else if(type==='chat')value.chats.push(data);});room.send('sync');return value;}
 
 test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:210000}, async()=>{
   const data=await mkdtemp(join(tmpdir(),'niuma-test-'));let server=await start(data);const rooms:Room[]=[];
@@ -367,4 +367,116 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     assert.equal(restored.weapon,'keyboard');assert.equal(restored.coins,50);assert.equal(restored.clears,1);
     const login=await fetch(base+'/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'alpha',password:'mvp-test-password'})});assert.equal(login.status,200);
   } finally {for(const room of rooms){try{await leave(room);}catch{}}await stop(server);await rm(data,{recursive:true,force:true});}
+});
+
+test('chat: 全楼层广播、限流、表情查表、超长截断', {timeout:120000}, async()=>{
+  const data=await mkdtemp(join(tmpdir(),'niuma-chat-'));const server=await start(data);const rooms:Room[]=[];
+  try {
+    const a=await register('chatty'),b=await register('listener');
+    const sdk=new Client(base);
+    const ra=await sdk.joinOrCreate('world',{zone:'office',token:a.token});rooms.push(ra);const va=watch(ra);
+    const rb=await new Client(base).joinOrCreate('world',{zone:'office',token:b.token});rooms.push(rb);const vb=watch(rb);
+    await until(()=>va.snap?.players.length===2&&vb.snap?.players.length===2,8000,'两人进同一个房间');
+
+    // 只看 a 说的话。下一个任务会让刘正超也往这条通道广播，按总数/下标写的断言
+    // 到那时会被他的台词随机打红。
+    const mine = () => vb.chats.filter(c => c.id === a.profile.id);
+
+    // 办公室的出生点是随机撒在corridor/meeting/storage三个区域的（server/world.ts 的
+    // pickSpawn），下面「a 必须还在走廊」的断言需要 a 先站在一个已知区域，否则本测试本身
+    // 就有约 2/3 概率在开局刷假红。先把 a 走回走廊，走法与本文件 :342-360 处理「重新加入
+    // 可能落在任意区域」是同一个问题、同一种修法。
+    const aMe=()=>va.snap!.players.find(p=>p.id===a.profile.id)!;
+    let aSeq=0;
+    if(aMe().area!=='corridor'){
+      const area=AREAS[aMe().area],midX=area.width/2,exit=area.exits[0],goalY=exit.rect.y+exit.rect.height/2;
+      let decision={left:false,right:false};
+      for(let tick=0;aMe().area!=='corridor';tick++){
+        if(tick>=300)throw new Error(`${area.name} 走不出去（a）`);
+        if(tick%15===0)decision={left:aMe().x>midX,right:aMe().x<=midX};
+        ra.send('input',{...decision,up:aMe().y>goalY,down:aMe().y<=goalY,seq:++aSeq});
+        await pause(34);
+      }
+      await until(()=>aMe().area==='corridor',5000,'a 走不回走廊');
+    }
+
+    // 把 b 挪进储物间，验证「全楼层」而不是「同房间」——这是本轮的核心决定，
+    // 两个人恰好同区时测出来的「收到了」证明不了任何事。
+    // 走法照抄本文件 :342-360 已有的那段：两个轴一起推，横向决策带迟滞——
+    // 单轴推进被家具挡住时会原地顶满超时，这个坑 PLAN.md 记过。
+    const bMe=()=>vb.snap!.players.find(p=>p.id===b.profile.id)!;
+    let bSeq=0;
+    if(bMe().area!=='corridor'){
+      const area=AREAS[bMe().area],midX=area.width/2,exit=area.exits[0],goalY=exit.rect.y+exit.rect.height/2;
+      let decision={left:false,right:false};
+      for(let tick=0;bMe().area!=='corridor';tick++){
+        if(tick>=300)throw new Error(`${area.name} 走不出去`);
+        if(tick%15===0)decision={left:bMe().x>midX,right:bMe().x<=midX};
+        rb.send('input',{...decision,up:bMe().y>goalY,down:bMe().y<=goalY,seq:++bSeq});
+        await pause(34);
+      }
+    }
+    const storageDoor=doorway(CORRIDOR_ROOMS.find(r=>r.id==='storage')!); // door:'top' —— 走廊在上方，进门是 y 变大
+    for(let tick=0;Math.abs(bMe().x-storageDoor.x)>8;tick++){
+      if(tick>=400)throw new Error('走不到储物间门口的 x');
+      rb.send('input',{left:bMe().x>storageDoor.x,right:bMe().x<storageDoor.x,seq:++bSeq});
+      await pause(34);
+    }
+    for(let tick=0;Math.abs(bMe().y-(storageDoor.y-60))>8;tick++){
+      if(tick>=400)throw new Error('走不到储物间门口的 y');
+      rb.send('input',{up:bMe().y>storageDoor.y-60,down:bMe().y<storageDoor.y-60,seq:++bSeq});
+      await pause(34);
+    }
+    for(let i=0;i<20;i++){rb.send('input',{down:true,seq:++bSeq});await pause(34);}
+    await until(()=>bMe().area==='storage',10000,'b 进不了储物间');
+    assert.equal(va.snap!.players.find(p=>p.id===a.profile.id)!.area,'corridor','a 必须还在走廊，否则这条测的不是跨房间');
+
+    vb.chats.length=0;
+    ra.send('chat',{text:'今天几点下班'});
+    await until(()=>mine().some(c=>c.text==='今天几点下班'),5000,'隔着房间也收得到');
+    const got=mine().find(c=>c.text==='今天几点下班')!;
+    assert.equal(got.id,a.profile.id);
+    assert.equal(got.kind,'say');
+    assert.ok(got.ms>=CHAT.minMs&&got.ms<=CHAT.maxMs,`气泡时长越界：${got.ms}`);
+
+    // 限流：紧接着再发一条，不产生第二个事件
+    await pause(CHAT.cooldownMs);
+    vb.chats.length=0;
+    ra.send('chat',{text:'第一条'});ra.send('chat',{text:'第二条'});
+    await until(()=>mine().some(c=>c.text==='第一条'),5000,'第一条要到');
+    await pause(400);
+    assert.equal(mine().filter(c=>c.text==='第二条').length,0,'限流没拦住连发');
+
+    // 表情：客户端只发 id，文案由服务器查表
+    await pause(CHAT.cooldownMs);
+    vb.chats.length=0;
+    ra.send('chat',{emote:'wave'});
+    await until(()=>mine().length>0,5000,'表情要到');
+    assert.equal(mine()[0].text,EMOTES.find(e=>e.id==='wave')!.text);
+    assert.equal(mine()[0].kind,'emote');
+
+    // 超长：服务器截断到 40 码点
+    await pause(CHAT.cooldownMs);
+    vb.chats.length=0;
+    ra.send('chat',{text:'超'.repeat(200)});
+    await until(()=>mine().length>0,5000,'超长消息要到');
+    assert.equal([...mine()[0].text].length,CHAT.maxChars);
+
+    // 畸形消息：一条都不该广播，服务器也不该崩
+    await pause(CHAT.cooldownMs);
+    vb.chats.length=0;
+    for(const bad of [{},{text:'   '},{text:''},{emote:'不存在'},{emote:42},{text:null},'裸字符串',null]) ra.send('chat',bad as any);
+    await pause(900);
+    assert.equal(mine().length,0,`畸形消息被广播了：${JSON.stringify(vb.chats)}`);
+    assert.ok((await fetch(base+'/api/health')).ok,'服务器被畸形消息打挂了');
+
+    // text 与 emote 同时给：只认 emote，且只广播一条
+    await pause(CHAT.cooldownMs);
+    vb.chats.length=0;
+    ra.send('chat',{text:'偷渡的文本',emote:'clap'});
+    await until(()=>mine().length>0,5000,'混合消息要有一条');
+    await pause(400);
+    assert.equal(mine().length,1,'混合消息广播了不止一条');
+    assert.equal(mine()[0].text,EMOTES.find(e=>e.id==='clap')!.text);
+  } finally { for(const r of rooms)await leave(r); await stop(server); await rm(data,{recursive:true,force:true}); }
 });

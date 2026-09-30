@@ -2,11 +2,11 @@ import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
 import { AREAS, corridor, exitAt, canStandAt, moveIn, randomStandablePoint, spotAtDesk, type Area, type AreaId } from '../shared/world/index.js';
-import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, NPC_LINES, nextDoing, type NpcDoing, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone } from '../shared/game.js';
+import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, NPC_LINES, nextDoing, sanitizeChat, bubbleMs, EMOTES, CHAT, type NpcDoing, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone, type ChatEvent } from '../shared/game.js';
 
 export const database = new Database();
 export const activeAccounts = new Map<string, string>();
-interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number }
+interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number; chatAt: number }
 interface Monster extends Enemy { attackAt: number; actionUntil: number; respawnAt: number }
 /** 办公室那位同事的私有状态：只有服务器看得见，快照里只出 action / say。 */
 interface Colleague extends Monster { goal?: { x: number; y: number }; doing: NpcDoing; after?: NpcDoing; nextAt: number; walkUntil: number; sayAt: number; sayUntil: number; aloneSince: number; vy: number }
@@ -56,6 +56,35 @@ export class WorldRoom extends Room {
     this.onMessage('shop', (client, message) => this.shop(client, message));
     this.onMessage('claim', client => this.claim(client));
     this.onMessage('sync', client => client.send('snapshot', this.snapshot()));
+    this.onMessage('chat', (client, data: unknown) => {
+      const p = this.players.get(client.sessionId);
+      if (!p || p.dropped) return;
+      // 限流在最前：畸形消息也走这条路，否则刷畸形包能绕开冷却去压 CPU。
+      // 回一条「说太快了」反而给刷屏者一个可以刷的东西，所以静默丢弃。
+      if (this.elapsed - p.chatAt < CHAT.cooldownMs) return;
+      const body = (data ?? {}) as { text?: unknown; emote?: unknown };
+      // emote 优先：同时给 text 和 emote 时只认 emote，永远只广播一条。
+      if (typeof body.emote === 'string') {
+        const emote = EMOTES.find(e => e.id === body.emote);
+        if (!emote) return;
+        p.chatAt = this.elapsed;
+        this.say(p.id, emote.text, 'emote');
+        return;
+      }
+      const rawText = typeof body.text === 'string' ? body.text : undefined;
+      const slash = rawText !== undefined ? EMOTES.find(e => e.slash === rawText.trim()) : undefined;
+      if (slash) { p.chatAt = this.elapsed; this.say(p.id, slash.text, 'emote'); return; }
+      // 斜杠命令在服务器解析，不在客户端拆——解析器因此只有一个。
+      if (rawText !== undefined && rawText.trim().startsWith('/')) {
+        p.chatAt = this.elapsed;
+        this.clientOf(client.sessionId)?.send('notice', '没有这个表情。可用：' + EMOTES.map(e => e.slash).join(' '));
+        return;
+      }
+      const text = sanitizeChat(body.text);
+      if (!text) return;
+      p.chatAt = this.elapsed;
+      this.say(p.id, text, 'say');
+    });
     this.setSimulationInterval(delta => {
       this.accumulator += Math.min(delta, 150);
       while (this.accumulator >= 1000 / 30) { this.step(); this.accumulator -= 1000 / 30; }
@@ -97,7 +126,7 @@ export class WorldRoom extends Room {
       id: profile.id, name: profile.name, role: profile.role, profile,
       x: spawn.x, y: spawn.y, vy: 0, face: 1, hp: 100,
       weapon: profile.weapon, action: 'idle', ack: 0, area: spawn.area, input: idleInput(), lastInput: 0,
-      attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false, exitCooldown: 0, noticeAt: -10000,
+      attackAt: -1000, hurtAt: -1000, actionUntil: 0, respawnAt: 0, dropped: false, exitCooldown: 0, noticeAt: -10000, chatAt: -10000,
     });
     client.send('profile', profile);
     this.broadcast('snapshot', this.snapshot());
@@ -197,6 +226,11 @@ export class WorldRoom extends Room {
     if (this.tickNumber % 2 === 0) this.broadcast('snapshot', this.snapshot());
   }
   private clientOf(sessionId: string) { return this.clients.find(c => c.sessionId === sessionId); }
+  /** 一句话是事件不是状态：只过一次网，客户端自己管过期。快照里不留任何痕迹——
+   *  快照每 2 tick 全量重发，把话放进去就等于每秒重复它 15 次。 */
+  private say(id: string, text: string, kind: ChatEvent['kind']) {
+    this.broadcast('chat', { id, text, kind, ms: bubbleMs(text) } satisfies ChatEvent);
+  }
   /** The server switches area immediately; the client's fade is pure presentation. */
   private tryExit(sessionId: string, p: Player, area: Area) {
     const exit = exitAt(area, p.x, p.y);
