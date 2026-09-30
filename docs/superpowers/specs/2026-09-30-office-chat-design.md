@@ -171,7 +171,13 @@ const canChat = () => openingDone && !!network.profile;
 4. 按码点截断到 40
 5. 空串返回 `undefined`（调用方据此丢弃，不广播空气泡）
 
-**注入风险为零**：气泡与小地图都画在 canvas 上，聊天文本一次都不碰 `innerHTML`。此条写入 spec 与 PLAN.md，否则将来有人做聊天记录面板时会重新引入这个风险。
+### 注入：头顶气泡安全，小地图不安全
+
+头顶气泡是 Phaser Text，画在 canvas 上，没有注入面。
+
+**小地图不是。** `src/map-panel.ts:112` 用的是 `get('map-players').innerHTML = …minimapDots(…).map(dot).join('')`——SVG 字符串拼接。今天安全只是因为那里流过的全是数字和服务器生成的 id；**聊天文本会是第一个到达这个 `innerHTML` 的用户可控字符串**。而 `escape()` 目前私藏在 `src/main.ts:19`，`map-panel.ts` 根本没有引用它。
+
+因此：抽出 `src/escape.ts`，`main.ts` 与 `map-panel.ts` 共用，小地图气泡文本与被点名的昵称都必须经过它。这一条要有测试钉住（断言 `<img onerror=…>` 出现在标记里时是转义过的），否则它会在某次重构里被悄悄去掉。
 
 ---
 
