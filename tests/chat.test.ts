@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeChat, bubbleMs, EMOTES, CHAT, NPC_LINES, NPC_MENTION_LINES, pickLine } from '../shared/game.js';
+import { sanitizeChat, bubbleMs, EMOTES, CHAT, NPC_LINES, NPC_MENTION_LINES, pickLine, PHASER_DIGIT } from '../shared/game.js';
 
 /** 按顺序吐出预定值的 random，用完后一直返回最后一个。用来把「抽到哪一条」变成确定的。 */
 const seq = (...values: number[]) => { let i = 0; return () => values[Math.min(i++, values.length - 1)]; };
@@ -54,6 +54,19 @@ test('EMOTES 的命令都以斜杠开头，文案都用全角括号包住', () =
   for (const e of EMOTES) {
     assert.ok(e.slash.startsWith('/'), `${e.id} 的命令没有斜杠`);
     assert.match(e.text, /^（.+）$/, `${e.id} 的文案不是动作描述`);
+  }
+});
+
+test('每个表情的数字键都能在 Phaser 键名映射表里查到', () => {
+  // 查不到时 this.keys[undefined] 是 undefined，那个表情永远发不出去，而且不抛异常——
+  // 这是本任务唯一一处「写错了不报错、只静默失效」的地方。
+  for (const e of EMOTES) {
+    assert.ok(PHASER_DIGIT[e.key], `表情 ${e.id} 的按键「${e.key}」不在映射表里`);
+  }
+  // 反向也要：映射表里不该有 EMOTES 用不到的键，否则 addKeys 的名单会和实际需要漂移。
+  const used = new Set<string>(EMOTES.map(e => e.key));
+  for (const key of Object.keys(PHASER_DIGIT)) {
+    assert.ok(used.has(key), `映射表里的「${key}」没有对应的表情`);
   }
 });
 

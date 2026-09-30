@@ -140,6 +140,12 @@ export const EMOTES = [
   { id: 'busy',  key: '6', slash: '/忙',   text: '（疯狂敲键盘，假装很忙）' },
 ] as const satisfies readonly { id: EmoteId; key: string; slash: string; text: string }[];
 
+/** EMOTES.key（'1'–'6'）到 Phaser 键名的映射。显式表，不靠字符串拼接或顺序推算——
+ *  查不到时 this.keys[undefined] 是 undefined，那个表情会永远发不出去，且不抛异常。
+ *  放在这里（而不是 src/game.ts）是因为 src/game.ts 会 import phaser，
+ *  在 node 测试环境里 import 不了；这张表要被单测覆盖，就得放在纯数据的共享层。 */
+export const PHASER_DIGIT: Record<string, string> = { '1': 'ONE', '2': 'TWO', '3': 'THREE', '4': 'FOUR', '5': 'FIVE', '6': 'SIX' };
+
 /** 截断必须按码点：'👍'.length === 2，用 slice 会从代理对中间切开，屏幕上是一个乱码方块。 */
 export function sanitizeChat(raw: unknown): string | undefined {
   if (typeof raw !== 'string') return undefined;

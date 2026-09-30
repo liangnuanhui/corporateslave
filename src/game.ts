@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
+import { WORLD, EMOTES, PHASER_DIGIT, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
 import { ChatBubbles } from './chat-bubbles';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
@@ -74,9 +74,9 @@ export class OfficeScene extends Phaser.Scene {
     this.officeCamera.configure(corridor);
     this.preview = this.add.sprite(corridor.spawnPoints[0].x, corridor.spawnPoints[0].y, 'office-avatar').setOrigin(.5).setDisplaySize(38, 40).setDepth(corridor.spawnPoints[0].y + 12);
     this.offline = this.add.text(WORLD.width / 2, WORLD.height - 58, '创建角色，开启你的下班冒险', { fontSize: '16px', fontFamily: 'sans-serif', color: '#fff4dd', backgroundColor: '#16202bd9', padding: { x: 20, y: 12 } }).setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false);
-    this.keys = this.input.keyboard!.addKeys('A,D,W,S,SPACE,J,E,LEFT,RIGHT,UP,DOWN') as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = this.input.keyboard!.addKeys('A,D,W,S,SPACE,J,E,LEFT,RIGHT,UP,DOWN,ONE,TWO,THREE,FOUR,FIVE,SIX') as Record<string, Phaser.Input.Keyboard.Key>;
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
-    this.input.keyboard!.removeCapture(['A','D','W','S','SPACE','J','E','LEFT','RIGHT','UP','DOWN']);
+    this.input.keyboard!.removeCapture(['A','D','W','S','SPACE','J','E','LEFT','RIGHT','UP','DOWN','ONE','TWO','THREE','FOUR','FIVE','SIX']);
     this.network.addEventListener('hit', event => { if (this.isReady) this.hit((event as CustomEvent).detail); });
     this.network.addEventListener('chat', event => this.bubbles.put((event as CustomEvent).detail));
     this.network.addEventListener('transition', event => this.playTransition((event as CustomEvent).detail.name));
@@ -165,6 +165,12 @@ export class OfficeScene extends Phaser.Scene {
       this.network.input(input); this.jumpQueued = false;
     }
     if (!blocked && Phaser.Input.Keyboard.JustDown(this.keys.E)) this.interact();
+    // 数字键表情。和 E 一样受 blocked 管：在聊天框里打「1」不能触发挥手。
+    // 显式映射表，不靠 EMOTES 的顺序推算键名——顺序是排版决定的，改一下就静默错位。
+    if (!blocked) for (const emote of EMOTES) {
+      const key = this.keys[PHASER_DIGIT[emote.key]];
+      if (key && Phaser.Input.Keyboard.JustDown(key)) { this.network.room?.send('chat', { emote: emote.id }); break; }
+    }
     this.offline.setVisible(!office && !this.network.connected);
     this.offline.setText(this.network.profile ? '连接中断 · 请点击右上角重新连接' : '创建角色，开启你的下班冒险');
     this.preview?.setVisible(!snap);
