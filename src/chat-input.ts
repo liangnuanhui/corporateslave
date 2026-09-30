@@ -3,8 +3,11 @@ import { CHAT } from '../shared/game';
 /** 这次 Enter 该不该打开聊天框。抽成纯函数是因为这个任务其余部分全靠浏览器人工验，
  *  而门控的条件最多——四个来源任意一个判错都是一个真 bug，且症状各不相同。 */
 export function shouldOpenChat(state: {
-  alreadyOpen: boolean; key: string; composing: boolean; dialogOpen: boolean; canChat: boolean;
+  alreadyOpen: boolean; key: string; composing: boolean; dialogOpen: boolean; canChat: boolean; fromChatBox: boolean;
 }): boolean {
+  // 来自聊天框自身的按键永远不该「打开聊天框」。少了这一条，Enter 发送后
+  // 同一个事件冒泡到 window 时 alreadyOpen 已经是 false，于是框会立刻重开。
+  if (state.fromChatBox) return false;
   if (state.alreadyOpen || state.key !== 'Enter') return false;
   if (state.dialogOpen) return false;       // 对话框里的 Enter 归对话框
   if (state.composing) return false;        // 输入法组字中的 Enter 是确认候选词
@@ -37,6 +40,10 @@ export function createChatInput(opts: {
   };
 
   box.addEventListener('keydown', event => {
+    // 任何 window 级监听器都不该看见聊天框里的打字——包括将来新加的。放在最顶上：
+    // preventDefault() 不阻止冒泡，Enter 发送后同一个事件会冒到 window，那时 open
+    // 已经被 close() 置为 false，不拦住冒泡的话聊天框会被同一次按键立刻重新打开。
+    event.stopPropagation();
     // 中文输入法：打「你好」时按 Enter 是在确认候选词，不是发送。不放行的话，
     // 每个用输入法的人第一次打字都会把半截拼音发出去。229 是老 WebKit 不设
     // isComposing 时的兜底。这条不能删。
@@ -58,6 +65,7 @@ export function createChatInput(opts: {
       composing: event.isComposing || event.keyCode === 229,
       dialogOpen: !!document.querySelector('dialog[open]'),       // 对话框里的 Enter 归对话框
       canChat: opts.canChat(),
+      fromChatBox: event.target === box,
     };
     // 门控只在这一处，且只写一遍：shouldOpenChat 判断「现在该不该开」；
     // 拿 canChat 强制为 true 再判一次，就知道「要不是没工牌/开场没放完，本来该开」——

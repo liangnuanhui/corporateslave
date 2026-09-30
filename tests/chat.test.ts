@@ -128,12 +128,13 @@ test('已经离开的人留下的气泡不会让 get 抛错，并最终过期', 
   assert.equal(b.size, 0, '过期条目应该被清掉，而不是永远堆着');
 });
 
-test('Enter 开聊天框的四个门控，每个都单独拦得住', () => {
-  const ok = { alreadyOpen: false, key: 'Enter', composing: false, dialogOpen: false, canChat: true };
-  assert.equal(shouldOpenChat(ok), true, '四个条件都满足时应该打开');
+test('Enter 开聊天框的五个门控，每个都单独拦得住', () => {
+  const ok = { alreadyOpen: false, key: 'Enter', composing: false, dialogOpen: false, canChat: true, fromChatBox: false };
+  assert.equal(shouldOpenChat(ok), true, '五个条件都满足时应该打开');
   assert.equal(shouldOpenChat({ ...ok, alreadyOpen: true }), false, '已经开着就不该再开');
   assert.equal(shouldOpenChat({ ...ok, key: 'a' }), false, '别的键不该开');
   assert.equal(shouldOpenChat({ ...ok, dialogOpen: true }), false, '对话框开着时 Enter 归对话框');
   assert.equal(shouldOpenChat({ ...ok, composing: true }), false, '输入法组字中的 Enter 是确认候选词，不是开聊天');
   assert.equal(shouldOpenChat({ ...ok, canChat: false }), false, '开场没放完或没工牌时不该开');
+  assert.equal(shouldOpenChat({ ...ok, fromChatBox: true }), false, '来自聊天框自身的按键不该重新打开它');
 });
