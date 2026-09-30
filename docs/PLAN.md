@@ -13,7 +13,51 @@ Current scope: browser multiplayer, fictional company and characters, and an ove
 Reference: design/concept.png. Dark #11151c page, #1a212b surfaces, cream #f5eedc foreground, muted #8e9ca8, mint #a6e8c2 accent. The page is now the game picture and nothing else: a full-width 16:10 canvas whose width is capped so its height fits the viewport, with the identity chip, key hints, connection state and the closing line in one strip beneath it. Native DOM controls and accessible dialogs; generated office and atlas artwork. Main copy: 牛马上班 处处战场; 新阳光基金会; 装备商店; 邀请同事; 今天，去哪？; 生死看淡，不服就干. The company has exactly one name and one definition — `ORG_NAME` in shared/game.ts. index.html's `<title>` is the sole static copy, because it is read before any module runs; tests/copy.test.ts pins it to the constant and fails if the old name reappears anywhere under src/ or shared/.
 
 ## Bounds
-No real-person targeting, office scans, PvP, chat, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
+No real-person targeting, office scans, PvP, trading, offline AI, or production deployment. Offline characters persist without participating. Browser reload restores account and progress; short disconnect offers reconnection. No claim of multi-process or 200-player readiness before dedicated load testing.
+
+Chat exists as of 2026-09-30, in exactly one form: typed lines and six emotes become an overhead
+bubble that expires. There is no log, no history and no persistence — a line that has faded is gone.
+
+## 办公室里说得上话了 — 2026-09-30
+
+按 `Enter` 打字，头顶冒气泡；`1`–`6` 或 `/挥手` 这类命令发六个表情。全楼层广播——
+不在同一个房间的人说的话，落在小地图上他投影出的光点旁（截短到六个字），点名到你的
+那条是薄荷绿。没有聊天记录：话淡出了就没了。
+
+代价：在房间里（大会议室 / 储物间）时看不到别处的话。房间的小地图画的是那个房间自己的
+平面图，上面没有任何位置能代表「别处」。所以全楼层广播在走廊上是完整的，进了房间就只
+兑现一半——消息收得到，但没地方显示。这是一个有意接受的取舍（硬塞一个非空间的角落浮层
+会违背「小地图气泡是为了保住空间感」这个设计决定），不是 bug。
+
+**一句话是事件，不是状态。** 服务器 `broadcast('chat', …)` 一次，客户端自己维持一张
+`id → { text, until }` 表并到点抹掉。刘正超原先的 `say` 字段从快照里删掉了，迁到同一条
+通道——否则渲染层要认两套气泡。这么选不是为了省带宽（24 人远不到瓶颈），是因为快照每
+2 tick 全量重发：把一句话放进快照，就等于每秒重复它 15 次。仓库里早有先例，`hit` 的伤害
+数字走的就是这条路。
+
+代价：中途加入或重连的人看不到正在飘的那句话。这对聊天是对的——走进会议室不该看到三秒前
+的话还挂在别人头上。
+
+四个踩过的坑：
+
+- **中文输入法的 `Enter` 是确认候选词，不是发送。** 不放行 `event.isComposing`（以及老
+  WebKit 的 `keyCode === 229`），每个用输入法的人第一次打字都会把半截拼音发出去——「nihao」
+  直接飘在头顶。这条只有中文用户会遇到，而写代码的人如果用英文测，永远测不出来。
+- **截断要按码点，不按 UTF-16 码元。** `'👍'.length === 2`，`slice(0, 40)` 会从代理对中间
+  切开，屏幕上是一个乱码方块。`[...text].slice(0, 40).join('')`。
+- **关闭输入框时必须重置按键状态。** 按 `Enter` 开聊天那一刻你可能正按着 `D`；焦点在输入框
+  时画布收不到 `keyup`，Phaser 那边 `D` 会一直是按下状态。关掉聊天，人就自己往右走，而你没碰
+  任何键。症状和原因隔着一次焦点切换，很难联想到一起。
+- **`preventDefault()` 不阻止冒泡。** 输入框里按 `Enter` 发送后，同一个 keydown 会继续冒到
+  window 上的监听器，而那时「聊天框开着」已经被置回 false，于是门控全部通过——框立刻重开。
+  症状是「消息发出去了，但人再也走不动」，看起来跟聊天毫无关系。修法是两处：在输入框的
+  处理器最开头 `stopPropagation()`，以及把「这个按键来自聊天框自身」做成门控函数里的一个
+  显式条件——后者才是能被单元测试钉住的那一半。
+
+另外，`escape()` 从 `src/main.ts` 抽成了 `src/escape.ts`。小地图是 `innerHTML` 拼 SVG
+（`src/map-panel.ts`），此前流过那里的全是数字和服务器生成的 id，**聊天文本是第一个到达
+那个 `innerHTML` 的用户可控字符串**。头顶气泡不需要转义（Phaser Text 画在 canvas 上），
+小地图需要，而且有测试钉住。
 
 ## 办公室里的攻击目标 — 2026-09-24
 
@@ -34,6 +78,20 @@ No real-person targeting, office scans, PvP, chat, trading, offline AI, or produ
 还没有的：他不会还手，不会走动，打倒他也不给积分。玩家之间依然不会互相伤害。
 
 ## 刘正超会自己上班了 — 2026-09-24
+
+**2026-09-30 改设定：他现在是领导。** 压着下属、毫无能力也毫无管理经验，台词分甩锅、画饼、
+踢皮球三类，外加会点名——模板是「这个 {name} 处理一下」这一类，名字从全楼层在线玩家里
+随机挑。名牌本身没有改字——还是「刘正超」，点名不改变这一点。
+
+**一个人都没在线时，点名那一类整个跳过。** 这不是新机制，是这一节下面已经记过的同一个套路：
+走廊没有工位，`spotAtDesk(corridor)` 返回 undefined，抽到「回工位」就退化成「玩手机」，
+而不是把人塞进墙里假装那是工位。同样地，没人可点就不点，而不是点一个叫 `undefined` 的同事。
+
+台词锁在无能与甩锅上，不碰性别、地域、外貌——被点名的是真实用户自己起的昵称，玩笑和冒犯
+之间就隔着这条线。
+
+他的 `say` 字段已从快照中删除，说话走 `chat` 事件；`sayForMs` 也没了，气泡时长改由
+`bubbleMs()` 按字数算。他仍然不还手，打倒他仍然不给积分。
 
 他不再是个站着不动的沙包：会在房间里走动、走到桌边「回工位」、停下来「玩手机」，
 时不时冒一句废话（`NPC_LINES`）。挨打时停 1.2 秒——边挨打边散步既看不出受伤，
@@ -171,10 +229,13 @@ door trigger.
   smooth zoom. − / ＋ zoom about the viewport centre; 全景 resets; 跟随我 toggles following and now
   survives crossing a door.
 - **The opening.** A stylised map of the company's sites, then the floor, then a push into whichever
-  area the player spawned in. Any key or click skips the whole sequence at any stage. A
-  `?zone=dungeon` invite link goes straight to the dungeon without it.
-- In 储物间, press E to open the equipment shop — the shop is refused anywhere else. At the
-  far-right end of the corridor, press E to enter the dungeon.
+  area the player spawned in. Any key or click skips the whole sequence at any stage. The
+  `?zone=dungeon` deep link is gone along with the other dungeon entry points (see
+  「界面收窄 — 2026-09-24」); the server still accepts `zone: 'dungeon'`, but nothing in the UI
+  produces that link any more.
+- In 储物间, press E to open the equipment shop — the shop is refused anywhere else. The far-right
+  end of the corridor no longer has an E trigger; that was the dungeon entry point removed in
+  「界面收窄 — 2026-09-24」.
 - The dungeon keeps its original combat, controls and rewards; none of the area work touches it.
 
 **PC only.** Existing touch controls and pinch zoom are left in the tree but are unsupported and
