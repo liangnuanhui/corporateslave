@@ -1,6 +1,7 @@
 import './style.css';
 import { Network } from './network';
 import { createGame } from './game';
+import { createChatInput } from './chat-input';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
 import { showSiteMap } from './site-map';
 import { ROLES, WEAPONS, damageFor, ORG_NAME } from '../shared/game';
@@ -24,7 +25,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
       ${mapPanelMarkup}
       <div class="hud"><div class="portrait"></div><div class="hud-details"><div class="health-row"><span class="heart">♥</span><div class="health-track"><div id="health-fill"></div><strong id="health-label">100 / 100</strong></div></div><div class="coins"><span class="coin-icon">₵</span><strong id="coins">—</strong><span>下班积分</span></div></div></div>
       <div class="stage-message" id="stage-message" hidden></div>
-      <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · J 攻击 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><div class="stage-actions"><button id="nav-shop" aria-label="装备商店">${icon('bag')}<span>装备商店</span></button><button id="invite" aria-label="复制邀请链接">${icon('share')}<span>邀请同事</span></button><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div></div>
+      <div class="stage-bottom"><span id="stage-hint">WASD 或方向键移动 · 走门进出 · J 攻击 · 滚轮以光标为中心缩放 · 拖拽 / 鼠标推到边缘移动视角</span><input id="chat-input" class="chat-input" hidden maxlength="40" autocomplete="off" placeholder="说点什么…（Enter 发送，Esc 取消，/挥手 等命令可用）" aria-label="发言"/><div class="stage-actions"><button id="nav-shop" aria-label="装备商店">${icon('bag')}<span>装备商店</span></button><button id="invite" aria-label="复制邀请链接">${icon('share')}<span>邀请同事</span></button><button id="sound" aria-label="开启音效">${icon('sound')}<span>音效关</span></button></div></div>
     </section></div>
     <section class="control-strip" aria-label="操作说明"><button id="profile-button" class="identity"><div class="portrait small"></div><span><strong id="player-name">你的工位，已预留</strong><small id="player-role">创建一个虚构角色，开始冒险</small></span></button><div class="keyboard-controls"><span><kbd class="wide">WASD</kbd>/<kbd>方向键</kbd>移动</span><span>滚轮缩放 · 拖拽移视角</span><span><kbd>J</kbd>攻击</span><span><kbd>E</kbd>互动</span></div><button id="connection" class="connection"><i></i><span>尚未连接</span><small id="ping">—</small></button><span class="control-note">生死看淡，不服就干</span></section>
     <div class="touch-controls" aria-label="触屏操作"><button data-touch="left" aria-label="向左移动">←</button><button data-touch="right" aria-label="向右移动">→</button><button data-touch="up" aria-label="向上移动">↑</button><button data-touch="down" aria-label="向下移动">↓</button><button data-touch="jump" id="touch-jump" hidden>跳跃</button><button data-touch="attack">攻击</button><button id="touch-interact">互动</button></div>
@@ -42,8 +43,20 @@ const shopDialog = $<HTMLDialogElement>('shop-dialog');
 const profileDialog = $<HTMLDialogElement>('profile-dialog');
 let loginMode = false, toastTimer = 0;
 let soundEnabled = false; let audio: AudioContext | undefined;
-const { scene } = createGame(network, () => !!document.querySelector('dialog[open]'), interact);
+let openingDone = false;
+// 必须带 | undefined：blocked 的闭包在 chat 被赋值之前就交给了 createGame，
+// 类型上不承认这一点的话 tsc 会拦下 `chat?.`。
+let chat: ReturnType<typeof createChatInput> | undefined;
+const { scene } = createGame(network, () => !!document.querySelector('dialog[open]') || !!chat?.isOpen(), interact);
 bindMapPanel(scene, network);
+chat = createChatInput({
+  send: payload => network.room?.send('chat', payload),
+  canChat: () => openingDone && !!network.profile,
+  // 开场还没放完时按 Enter 什么都不做（那时 Enter 归「跳过」）；
+  // 放完了但没工牌，就和按 J / 按 E / 点商店一样弹工牌对话框。
+  onRefused: () => { if (openingDone && !network.profile) show(authDialog); },
+  onClose: () => scene.resetInputKeys(),
+});
 $('touch-interact').onclick = interact;
 function toast(message: string) { $('toast').textContent = message; $('toast').classList.add('visible'); clearTimeout(toastTimer); toastTimer = window.setTimeout(()=>$('toast').classList.remove('visible'),4000); }
 function show(dialog: HTMLDialogElement) { scene.resetInput(); dialog.showModal(); }
@@ -69,7 +82,7 @@ async function openingSequence() {
   const skip = () => { skipped = true; };
   window.addEventListener('keydown', skip); window.addEventListener('pointerdown', skip);
   try { await showSiteMap(); await initialJoin(); await scene.playOpening(() => skipped); }
-  finally { window.removeEventListener('keydown', skip); window.removeEventListener('pointerdown', skip); }
+  finally { window.removeEventListener('keydown', skip); window.removeEventListener('pointerdown', skip); openingDone = true; }
 }
 function interact() {
   if (!network.profile) { show(authDialog); return; }
@@ -159,7 +172,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-touch]').forEach(button=>{
   button.onpointerdown=event=>{event.preventDefault();button.setPointerCapture(event.pointerId);scene.touchInput(key,true);};
   button.onpointerup=button.onpointercancel=()=>scene.touchInput(key,false);
 });
-window.addEventListener('keydown',event=>{if(!document.querySelector('dialog[open]')&&['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code))event.preventDefault();});
+window.addEventListener('keydown',event=>{if(!document.querySelector('dialog[open]')&&!chat?.isOpen()&&['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.code))event.preventDefault();});
 setInterval(()=>{if(network.connected)network.room?.send('ping',Date.now());},3000);
 // 右侧任务栏里的「创建角色」没了，所以没有身份时直接把工牌弹出来——它现在是唯一的入口。
 // catch 只包住 restore()：以前它也包着后面的分支，于是任何一个界面 bug 都会谎报成「服务器连不上」。

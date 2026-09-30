@@ -97,6 +97,8 @@ export class OfficeScene extends Phaser.Scene {
     this.jumpQueued = false; this.lastJump = false;
     this.network.input({ ...this.touch, seq: ++this.seq });
   }
+  /** 聊天框关闭时由外部调用：焦点在输入框期间画布收不到 keyup，不重置就会「人自己走」。 */
+  resetInputKeys() { this.input?.keyboard?.resetKeys(); }
   update(time: number, delta: number) {
     if (!this.isReady) return;
     const snap = this.network.snapshot;

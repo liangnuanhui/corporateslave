@@ -121,3 +121,7 @@ main{display:flex;flex-direction:column;height:100vh;height:100dvh;padding-botto
 /* 底板：血条和积分原本直接压在地板上，米色地板配奶油色小字，「下班积分」那行几乎读不出来。
    和下面的地点牌同一种底，左上角读起来是一块，而不是飘在画面上的几个字。 */
 .stage .hud{background:#15271fdd;border:1px solid #5c735e;border-radius:5px;padding:6px 9px 7px 6px}
+.chat-input{flex:1;min-width:0;background:#11151c;border:1px solid #33414f;border-radius:8px;
+  color:#f5eedc;font:inherit;font-size:14px;padding:6px 10px}
+.chat-input:focus{outline:none;border-color:#a6e8c2}
+.chat-input[hidden]{display:none}
