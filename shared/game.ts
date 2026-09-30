@@ -92,3 +92,39 @@ export function nextDoing(random: () => number = Math.random): Exclude<NpcDoing,
   const roll = random();
   return roll < .5 ? 'walk' : roll < .78 ? 'desk' : 'phone';
 }
+
+/** 一句话的规矩。全部在服务器执行——客户端也挡一道，但那只是少发一个包，不是信任边界。 */
+export const CHAT = {
+  maxChars: 40,      // 气泡限宽 240px、40 字正好三行
+  baseMs: 2500, perCharMs: 150,  // 中文阅读约每秒 5–8 字，斜率照此
+  minMs: 3000, maxMs: 9000,
+  cooldownMs: 1200,
+} as const;
+
+export interface ChatEvent { id: string; text: string; kind: 'say' | 'emote'; ms: number }
+
+export type EmoteId = 'wave' | 'clap' | 'sigh' | 'nod' | 'shrug' | 'busy';
+/** 数字键和斜杠命令读同一张表，所以「双入口」不会漂成两份文案。 */
+export const EMOTES = [
+  { id: 'wave',  key: '1', slash: '/挥手', text: '（挥了挥手）' },
+  { id: 'clap',  key: '2', slash: '/鼓掌', text: '（鼓了鼓掌）' },
+  { id: 'sigh',  key: '3', slash: '/叹气', text: '（叹了口气）' },
+  { id: 'nod',   key: '4', slash: '/点头', text: '（点了点头）' },
+  { id: 'shrug', key: '5', slash: '/摊手', text: '（摊开双手）' },
+  { id: 'busy',  key: '6', slash: '/忙',   text: '（疯狂敲键盘，假装很忙）' },
+] as const satisfies readonly { id: EmoteId; key: string; slash: string; text: string }[];
+
+/** 截断必须按码点：'👍'.length === 2，用 slice 会从代理对中间切开，屏幕上是一个乱码方块。 */
+export function sanitizeChat(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  // 换行会把气泡撑成怪形状；其余控制字符直接丢掉，不留空格。
+  const flat = raw.replace(/[\r\n\t]+/g, ' ').replace(/[\u0000-\u001f\u007f]/g, '');
+  const text = flat.replace(/\s+/g, ' ').trim();
+  if (!text) return undefined;
+  return [...text].slice(0, CHAT.maxChars).join('');
+}
+
+export function bubbleMs(text: string): number {
+  const chars = [...text].length;
+  return Math.min(CHAT.maxMs, Math.max(CHAT.minMs, CHAT.baseMs + chars * CHAT.perCharMs));
+}
