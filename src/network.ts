@@ -42,6 +42,7 @@ export class Network extends EventTarget {
       room.onMessage('notice', (message: string) => this.emit('notice', message));
       room.onMessage('transition', data => this.emit('transition', data));
       room.onMessage('hit', data => this.emit('hit', data));
+      room.onMessage('chat', data => this.emit('chat', data));
       room.onMessage('complete', data => this.emit('complete', data));
       room.onMessage('reward', data => this.emit('reward', data));
       room.onMessage('pong', time => this.emit('ping', Math.max(0, Date.now() - time)));

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { WORLD, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
+import { ChatBubbles } from './chat-bubbles';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
 import { drawArea, createOfficeAvatar } from './render/area-renderer';
 import { currentSite } from './site-map';
@@ -24,6 +25,7 @@ const OFFICE_BUBBLE_UP = 70;  // 气泡底边，在血条之上
 interface Visual { sprite: Phaser.GameObjects.Sprite; label: Phaser.GameObjects.Text; health: Phaser.GameObjects.Graphics; shadow: Phaser.GameObjects.Ellipse; bubble: Phaser.GameObjects.Text }
 export class OfficeScene extends Phaser.Scene {
   private visuals = new Map<string, Visual>();
+  readonly bubbles = new ChatBubbles();
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private background!: Phaser.GameObjects.Image;
   private floorPlan?: Phaser.GameObjects.Container;
@@ -76,6 +78,7 @@ export class OfficeScene extends Phaser.Scene {
     // Capture game keys only while the canvas has focus; dialogs keep normal typing.
     this.input.keyboard!.removeCapture(['A','D','W','S','SPACE','J','E','LEFT','RIGHT','UP','DOWN']);
     this.network.addEventListener('hit', event => { if (this.isReady) this.hit((event as CustomEvent).detail); });
+    this.network.addEventListener('chat', event => this.bubbles.put((event as CustomEvent).detail));
     this.network.addEventListener('transition', event => this.playTransition((event as CustomEvent).detail.name));
     this.network.addEventListener('snapshot', () => {
       if (this.network.snapshot?.roomId !== this.activeRoom) { this.activeRoom = this.network.snapshot?.roomId || ''; this.seq = 0; }
@@ -207,7 +210,8 @@ export class OfficeScene extends Phaser.Scene {
     v.sprite.setTint(actor.action === 'hurt' ? 0xffb2a2 : enemy && office ? 0xf0c49c : role === 'senior' ? 0xc8b8ff : role === 'lead' ? 0xffd5a5 : 0xffffff);
     // Oblique depth: whoever stands lower on the floor is in front. Labels never take part.
     const depth = office ? v.sprite.y + 12 : 20;
-    v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000); v.bubble.setDepth(10001);
+    // 气泡跟着人物深度走：前面的人的气泡盖住后面的人的。名牌与血条小，维持平的 10000。
+    v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000); v.bubble.setDepth(10001 + depth);
     // 在干什么直接写进名牌：办公室里所有人用的是同一张贴图，没有姿势可以区分「在工位」和「玩手机」。
     const doing = enemy && actor.hp ? ({ desk: ' · 在工位', phone: ' · 玩手机', walk: ' · 溜达中' } as Record<string, string>)[actor.action] ?? '' : '';
     v.label.setText(actor.name + (my ? ' · 你' : '') + doing + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_LABEL_UP : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
@@ -218,8 +222,18 @@ export class OfficeScene extends Phaser.Scene {
       v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32, barY, 64, 5);
       v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32, barY, 64*actor.hp/(actor as Enemy).maxHp, 5);
     }
-    // 临时：say 字段已从快照删除，气泡改读客户端事件表由下一个任务接手。
-    v.bubble.setVisible(false);
+    // 气泡按 id 从表里取，不再从快照的字段读——一句话是事件，快照里没有它。
+    // hp<=0 时不显示：躺平的刘正超不说话。
+    // **不要把 Phaser 的 time 传进去。** put() 用的是 performance.now()，而 Phaser 的 time
+    // 是「游戏启动以来的毫秒数」，两个时钟原点不同——混用会让气泡要么瞬间消失、要么永不消失。
+    // 表自己拿 performance.now()，调用方不传，就没有混用的机会。
+    const bubble = actor.hp > 0 ? this.bubbles.get(actor.id) : undefined;
+    v.bubble.setVisible(!!bubble);
+    if (bubble) v.bubble
+      .setText(bubble.text)
+      .setColor(bubble.kind === 'emote' ? '#6b7d68' : '#2c3b30')  // 表情是动作不是话语，用偏灰的字
+      .setWordWrapWidth(240)
+      .setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_BUBBLE_UP : height + 44));
     v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
   }
   /** Opening: hold the whole floor for a beat, then push into wherever the server spawned us.

@@ -90,3 +90,39 @@ test('点名模板都含 {name}，普通台词都不含', () => {
   for (const t of NPC_MENTION_LINES) assert.ok(t.includes('{name}'), `${t} 不是模板`);
   for (const l of NPC_LINES) assert.ok(!l.includes('{name}'), `${l} 不该含模板`);
 });
+
+import { ChatBubbles } from '../src/chat-bubbles.js';
+
+test('气泡到点消失', () => {
+  const b = new ChatBubbles();
+  b.put({ id: 'p1', text: '在的', kind: 'say', ms: 3000 }, 1000);
+  assert.equal(b.get('p1', 3999)?.text, '在的');
+  assert.equal(b.get('p1', 4001), undefined);
+});
+
+test('同一个人连说两句，后一句顶掉前一句', () => {
+  const b = new ChatBubbles();
+  b.put({ id: 'p1', text: '第一句', kind: 'say', ms: 9000 }, 0);
+  b.put({ id: 'p1', text: '第二句', kind: 'say', ms: 3000 }, 100);
+  assert.equal(b.get('p1', 200)?.text, '第二句');
+  assert.equal(b.live(200).length, 1, '一个人同时只该有一个气泡');
+});
+
+test('live() 只返回没过期的，且按最新在前', () => {
+  const b = new ChatBubbles();
+  b.put({ id: 'old', text: '旧', kind: 'say', ms: 3000 }, 0);
+  b.put({ id: 'mid', text: '中', kind: 'say', ms: 9000 }, 100);
+  b.put({ id: 'new', text: '新', kind: 'emote', ms: 9000 }, 200);
+  assert.deepEqual(b.live(4000).map(x => x.id), ['new', 'mid']);
+});
+
+test('已经离开的人留下的气泡不会让 get 抛错，并最终过期', () => {
+  // 玩家在自己气泡还活着时离开房间，表里就留下一条指向已销毁精灵的条目。
+  // 渲染层按快照里的人来遍历，所以只要 get/live 不抛错、到点会消失，就没有泄漏。
+  const b = new ChatBubbles();
+  b.put({ id: 'gone', text: '我先下了', kind: 'say', ms: 3000 }, 0);
+  assert.doesNotThrow(() => b.get('gone', 5000));
+  assert.equal(b.get('gone', 5000), undefined);
+  assert.equal(b.live(5000).length, 0);
+  assert.equal(b.size, 0, '过期条目应该被清掉，而不是永远堆着');
+});
