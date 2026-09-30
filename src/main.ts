@@ -4,6 +4,7 @@ import { createGame } from './game';
 import { createChatInput } from './chat-input';
 import { mapPanelMarkup, bindMapPanel } from './map-panel';
 import { showSiteMap } from './site-map';
+import { escape } from './escape';
 import { ROLES, WEAPONS, damageFor, ORG_NAME } from '../shared/game';
 
 const paths: Record<string,string> = {
@@ -17,7 +18,6 @@ const paths: Record<string,string> = {
   close:'m6 6 12 12M6 18 18 6',
 };
 const icon = (name: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${paths[name] || paths.arrow}"/></svg>`;
-const escape = (s: string) => s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <main>
     <div class="game-layout"><section class="stage" aria-label="像素办公室">

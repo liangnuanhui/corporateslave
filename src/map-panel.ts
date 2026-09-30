@@ -1,5 +1,5 @@
 import { corridor, roomAt, AREAS, type Area, type AreaId } from '../shared/world';
-import { corridorMarkup, roomMarkup, minimapDots, type MinimapDot } from './minimap';
+import { corridorMarkup, roomMarkup, minimapDots, minimapBubbles, bubbleMarkup, type MinimapDot } from './minimap';
 import type { OfficeScene } from './game';
 import type { CameraView } from './office-camera';
 import type { Network } from './network';
@@ -109,7 +109,12 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
     const player = snapshot?.players.find(p => p.id === network.profile?.id);
     const area = AREAS[shownArea];
     const dot = (d: MinimapDot) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.self ? '#c0f3c8' : '#e4c88d'}" stroke="#172b24" stroke-width="12"/>`;
-    get('map-players').innerHTML = office ? minimapDots(area, snapshot?.players ?? [], player?.id).map(dot).join('') : '';
+    const players = snapshot?.players ?? [];
+    const dots = office ? minimapDots(area, players, player?.id).map(dot).join('') : '';
+    const bubbles = office
+      ? minimapBubbles(area, players, scene.bubbles.live(), network.profile?.name).map(bubbleMarkup).join('')
+      : '';
+    get('map-players').innerHTML = dots + bubbles;
     const room = player && player.area === 'corridor' ? roomAt(player.x, player.y) : undefined;
     document.querySelectorAll<SVGElement>('[data-map-room]').forEach(button => {
       const active = button.dataset.mapRoom === room?.id;
