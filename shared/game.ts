@@ -76,7 +76,7 @@ export type NpcDoing = 'walk' | 'desk' | 'phone' | 'idle';
 /** 他是个压着下属、毫无能力也毫无管理经验的领导。台词锁在「无能 / 甩锅 / 踢皮球」上——
  *  不碰性别、地域、外貌。被点名的是真实用户自己起的昵称，玩笑和冒犯之间就隔着这条线。
  *  句子本身是这个游戏的笑点，所以放在共享层，客户端不重写一份。 */
-export const NPC_LINES = [
+export const NPC_LINES: readonly string[] = [
   // 甩锅
   '我不干事情的，我就是个传话的。',
   '这个我不会啊，你们谁懂谁来。',
@@ -92,7 +92,7 @@ export const NPC_LINES = [
 ];
 
 /** 点名句。{name} 由服务器用全楼层在线玩家的昵称填充。 */
-export const NPC_MENTION_LINES = [
+export const NPC_MENTION_LINES: readonly string[] = [
   '这个 {name} 处理一下。',
   '{name} 你说说，这个怎么弄。',
   '{name} 辛苦一下，今天之内。',
