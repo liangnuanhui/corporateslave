@@ -59,7 +59,10 @@ export function meleeHits<T extends { hp: number; area: AreaId; x: number; y: nu
 
 /** MVP 只有一个可打的目标：一位血量和工位都随机的同事。名字是虚构的。 */
 export const NPC = {
-  id: 'colleague', name: '刘正超',
+  // title 单独一个字段，不并进 name：name 被服务器「XX 躺平了」这类提示、以及
+  // tests/multiplayer.test.ts 里十几处断言/日志共用，并进去就会把「· 主管」
+  // 漏进那些不该出现职级的地方；只有名牌渲染需要 title。
+  id: 'colleague', name: '刘正超', title: '主管',
   hpMin: 60, hpMax: 180, hpStep: 10, respawnMs: 8000,
   speed: 96,          // 比玩家(235)慢得多：他在上班，不是在赶路
   restMinMs: 4000, restMaxMs: 11000,

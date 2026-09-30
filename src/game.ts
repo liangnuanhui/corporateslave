@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, EMOTES, PHASER_DIGIT, type Actor, type Enemy, type Input } from '../shared/game';
+import { WORLD, NPC, EMOTES, PHASER_DIGIT, type Actor, type Enemy, type Input } from '../shared/game';
 import { Network } from './network';
 import { ChatBubbles } from './chat-bubbles';
 import { AREAS, corridor, CORRIDOR_ROOMS, type AreaId } from '../shared/world';
@@ -222,7 +222,10 @@ export class OfficeScene extends Phaser.Scene {
     v.sprite.setDepth(depth); v.shadow.setDepth(depth - 1); v.label.setDepth(10000); v.health.setDepth(10000); v.bubble.setDepth(10001 + depth);
     // 在干什么直接写进名牌：办公室里所有人用的是同一张贴图，没有姿势可以区分「在工位」和「玩手机」。
     const doing = enemy && actor.hp ? ({ desk: ' · 在工位', phone: ' · 玩手机', walk: ' · 溜达中' } as Record<string, string>)[actor.action] ?? '' : '';
-    v.label.setText(actor.name + (my ? ' · 你' : '') + doing + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_LABEL_UP : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
+    // 职级只在办公室里那位 NPC 身上显示，紧跟名字、排在「在干什么」前面：
+    // 「刘正超 · 主管 · 在工位」。副本里的怪物（含 boss）不是这个 id，不受影响。
+    const title = office && enemy && actor.id === NPC.id ? ` · ${NPC.title}` : '';
+    v.label.setText(actor.name + title + (my ? ' · 你' : '') + doing + (actor.hp ? '' : enemy ? ' · 已躺平' : ' · 休息中')).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_LABEL_UP : height + 10)).setColor(my ? '#a6e8c2' : '#f5eedc');
     v.health.clear();
     // 俯视时精灵是中心对齐的（origin .5/.5），侧视是底部对齐，血条的基准线因此不同。
     if (enemy && actor.hp > 0) {

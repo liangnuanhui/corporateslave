@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeChat, bubbleMs, EMOTES, CHAT, NPC_LINES, NPC_MENTION_LINES, pickLine, PHASER_DIGIT } from '../shared/game.js';
+import { sanitizeChat, bubbleMs, EMOTES, CHAT, NPC, NPC_LINES, NPC_MENTION_LINES, pickLine, PHASER_DIGIT } from '../shared/game.js';
 
 /** 按顺序吐出预定值的 random，用完后一直返回最后一个。用来把「抽到哪一条」变成确定的。 */
 const seq = (...values: number[]) => { let i = 0; return () => values[Math.min(i++, values.length - 1)]; };
@@ -150,4 +150,10 @@ test('Enter 开聊天框的五个门控，每个都单独拦得住', () => {
   assert.equal(shouldOpenChat({ ...ok, composing: true }), false, '输入法组字中的 Enter 是确认候选词，不是开聊天');
   assert.equal(shouldOpenChat({ ...ok, canChat: false }), false, '开场没放完或没工牌时不该开');
   assert.equal(shouldOpenChat({ ...ok, fromChatBox: true }), false, '来自聊天框自身的按键不该重新打开它');
+});
+
+test('职级是单独字段，没有混进名字里', () => {
+  // name 被服务器的「XX 躺平了」提示和集成测试的十几处断言共用，职级一旦并进去就会漏到那些地方。
+  assert.equal(NPC.name, '刘正超');
+  assert.ok(NPC.title && !NPC.name.includes(NPC.title), '职级不该出现在 name 里');
 });
