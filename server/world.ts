@@ -2,14 +2,14 @@ import { Room, type Client } from '@colyseus/core';
 import { randomUUID } from 'node:crypto';
 import { Database } from './database.js';
 import { AREAS, corridor, exitAt, canStandAt, moveIn, randomStandablePoint, spotAtDesk, type Area, type AreaId } from '../shared/world/index.js';
-import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, NPC_LINES, nextDoing, sanitizeChat, bubbleMs, EMOTES, CHAT, type NpcDoing, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone, type ChatEvent } from '../shared/game.js';
+import { WORLD, move, idleInput, damageFor, inRange, meleeHits, NPC, pickLine, nextDoing, sanitizeChat, bubbleMs, EMOTES, CHAT, type NpcDoing, type Actor, type Enemy, type Input, type Profile, type Snapshot, type Zone, type ChatEvent } from '../shared/game.js';
 
 export const database = new Database();
 export const activeAccounts = new Map<string, string>();
 interface Player extends Actor { input: Input; profile: Profile; lastInput: number; attackAt: number; hurtAt: number; actionUntil: number; respawnAt: number; dropped: boolean; exitCooldown: number; noticeAt: number; chatAt: number }
 interface Monster extends Enemy { attackAt: number; actionUntil: number; respawnAt: number }
-/** 办公室那位同事的私有状态：只有服务器看得见，快照里只出 action / say。 */
-interface Colleague extends Monster { goal?: { x: number; y: number }; doing: NpcDoing; after?: NpcDoing; nextAt: number; walkUntil: number; sayAt: number; sayUntil: number; aloneSince: number; vy: number }
+/** 办公室那位同事的私有状态：只有服务器看得见，快照里只出 action。说的话走 chat 事件。 */
+interface Colleague extends Monster { goal?: { x: number; y: number }; doing: NpcDoing; after?: NpcDoing; nextAt: number; walkUntil: number; sayAt: number; aloneSince: number; vy: number }
 
 export class WorldRoom extends Room {
   private zone: Zone = 'office';
@@ -42,7 +42,7 @@ export class WorldRoom extends Room {
       this.colleague = this.placeColleague({
         id: NPC.id, name: NPC.name, x: 0, y: 0, vy: 0, hp: 0, maxHp: 0, face: -1, action: 'idle',
         attackAt: 0, actionUntil: 0, respawnAt: 0, area: 'corridor',
-        doing: 'idle', nextAt: 0, walkUntil: 0, sayAt: 0, sayUntil: 0, aloneSince: 0,
+        doing: 'idle', nextAt: 0, walkUntil: 0, sayAt: 0, aloneSince: 0,
       });
       this.enemies = [this.colleague];
     }
@@ -260,7 +260,7 @@ export class WorldRoom extends Room {
     }
     npc.action = 'idle'; npc.doing = 'idle'; npc.goal = undefined; npc.after = undefined;
     npc.actionUntil = 0; npc.respawnAt = 0; npc.nextAt = 0; npc.walkUntil = 0;
-    npc.say = undefined; npc.sayUntil = 0; npc.sayAt = 0; npc.aloneSince = this.elapsed;
+    npc.sayAt = 0; npc.aloneSince = this.elapsed;
     return npc;
   }
 
@@ -277,11 +277,11 @@ export class WorldRoom extends Room {
     if (npc.action === 'hurt') npc.action = npc.doing === 'walk' ? 'idle' : npc.doing;
 
     if (this.elapsed >= npc.sayAt) {
-      npc.say = NPC_LINES[Math.floor(Math.random() * NPC_LINES.length)];
-      npc.sayUntil = this.elapsed + NPC.sayForMs;
+      // 全楼层在线玩家的昵称——他点名只点得到还在公司里的人。
+      const names = [...this.players.values()].filter(p => !p.dropped).map(p => p.name);
+      this.say(npc.id, pickLine(names), 'say');
       npc.sayAt = this.elapsed + NPC.sayEveryMinMs + Math.random() * (NPC.sayEveryMaxMs - NPC.sayEveryMinMs);
     }
-    if (npc.say && this.elapsed >= npc.sayUntil) npc.say = undefined;
 
     if (npc.doing === 'walk' && npc.goal) {
       const dx = npc.goal.x - npc.x, dy = npc.goal.y - npc.y;
@@ -325,7 +325,7 @@ export class WorldRoom extends Room {
     return {
       roomId: this.roomId, zone: this.zone, tick: this.tickNumber, status: this.status, wave: 1,
       players: [...this.players.values()].map(p => ({ id: p.id, name: p.name, role: p.role, x: p.x, y: p.y, vy: p.vy, face: p.face, hp: p.hp, weapon: p.weapon, action: p.action, ack: p.ack, area: p.area })),
-      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action, area: e.area, say: e.say })),
+      enemies: this.enemies.map(e => ({ id: e.id, name: e.name, x: e.x, y: e.y, hp: e.hp, maxHp: e.maxHp, face: e.face, action: e.action, area: e.area })),
     };
   }
   private async shop(client: Client, message: { weapon?: string }) {

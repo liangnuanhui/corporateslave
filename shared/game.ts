@@ -19,7 +19,7 @@ export type Zone = 'office' | 'dungeon';
 export interface Profile { id: string; username: string; name: string; role: RoleId; coins: number; weapon: WeaponId; owned: WeaponId[]; clears: number }
 export interface Input { left: boolean; right: boolean; up: boolean; down: boolean; jump: boolean; attack: boolean; seq: number }
 export interface Actor { id: string; name: string; role: string; x: number; y: number; vy: number; face: number; hp: number; weapon: string; action: string; ack: number; area: AreaId }
-export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string; area: AreaId; say?: string }
+export interface Enemy { id: string; name: string; x: number; y: number; hp: number; maxHp: number; face: number; action: string; area: AreaId }
 export interface Snapshot { roomId: string; zone: Zone; tick: number; players: Actor[]; enemies: Enemy[]; status: 'playing' | 'complete'; wave: number }
 export const idleInput = (): Input => ({ left: false, right: false, up: false, down: false, jump: false, attack: false, seq: 0 });
 export function move(actor: Pick<Actor, 'x' | 'y' | 'vy' | 'face'>, input: Input, dt = WORLD.tick) {
@@ -65,7 +65,7 @@ export const NPC = {
   restMinMs: 4000, restMaxMs: 11000,
   walkTimeoutMs: 9000, // 走不到就换个目的地——路上有没有家具是抽不到的
   hurtPauseMs: 1200,   // 挨打时停下来，不是边挨打边散步
-  sayEveryMinMs: 7000, sayEveryMaxMs: 16000, sayForMs: 4200,
+  sayEveryMinMs: 7000, sayEveryMaxMs: 16000,
   /** 没有任何玩家在他那个区域时，隔这么久换一个房间——没人看见，所以不会出现“瞬移”。 */
   relocateAfterMs: 45000,
 };

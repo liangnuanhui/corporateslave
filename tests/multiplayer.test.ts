@@ -173,7 +173,8 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       let mark = { x: target().x, y: target().y };
       const observe = () => {
         const t = target();
-        if (t.say) seen.say.add(t.say);
+        // 他的话现在走 chat 事件，不在快照里。按 id 过滤——同一条通道上还有玩家说的话。
+        for (const c of va.chats) if (c.id === NPC.id) seen.say.add(c.text);
         seen.doing.add(t.action);
         const step = Math.hypot(t.x - mark.x, t.y - mark.y);
         if (step > 2) { seen.moved += step; mark = { x: t.x, y: t.y }; }
@@ -264,9 +265,17 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       const detail = () => `移动 ${seen.moved.toFixed(0)}px，姿势 ${[...seen.doing].join('/')}，说过 ${seen.say.size} 句`;
       for (let i = 0; i < 400 && !checks.every(([, ok]) => ok()); i++) { observe(); await pause(120); }
       for (const [what, ok] of checks) assert.ok(ok(), `${NPC.name} 没有${what}（${detail()}）`);
-      // 说的必须是台词表里的句子：服务器要是把别的字段（名字、房间名）当台词发出去，上面
-      // 「说过话」那条照样绿。
-      for (const line of seen.say) assert.ok(NPC_LINES.includes(line), `说了一句台词表里没有的话：${line}`);
+      // 说的必须是台词表里的句子，或者某条点名模板填入昵称后的结果：服务器要是把别的字段
+      // （名字、房间名）当台词发出去，上面「说过话」那条照样绿。
+      const mentionRe = NPC_MENTION_LINES.map(t =>
+        new RegExp('^' + t.split('{name}').map(s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('(.+)') + '$'));
+      for (const line of seen.say) {
+        assert.ok(
+          NPC_LINES.includes(line) || mentionRe.some(re => re.test(line)),
+          `说了一句台词表里没有、也不匹配任何点名模板的话：${line}`,
+        );
+        assert.ok(!line.includes('{name}'), `模板没被替换就发出去了：${line}`);
+      }
       console.log(`integration: ${NPC.name} 移动 ${seen.moved.toFixed(0)}px，姿势 ${[...seen.doing].join('/')}，说过 ${seen.say.size} 句`);
       // 这一段打完人可能停在任意一个房间里，而后面每一段都假设「人在走廊、用走廊坐标」。
       // 不还原这个前提，后面的 walkTo 会拿走廊坐标去房间的坐标系里走，看起来还一路“成功”。
@@ -478,5 +487,29 @@ test('chat: 全楼层广播、限流、表情查表、超长截断', {timeout:12
     await pause(400);
     assert.equal(mine().length,1,'混合消息广播了不止一条');
     assert.equal(mine()[0].text,EMOTES.find(e=>e.id==='clap')!.text);
+  } finally { for(const r of rooms)await leave(r); await stop(server); await rm(data,{recursive:true,force:true}); }
+});
+
+test('刘正超的话走 chat 事件，快照里不再有 say', {timeout:120000}, async()=>{
+  const data=await mkdtemp(join(tmpdir(),'niuma-npc-chat-'));const server=await start(data);const rooms:Room[]=[];
+  try {
+    const a=await register('audience');
+    const ra=await new Client(base).joinOrCreate('world',{zone:'office',token:a.token});rooms.push(ra);const va=watch(ra);
+    await until(()=>!!va.snap,8000,'拿到第一份快照');
+    // 他每 7–16 秒说一句，等两轮足够。观察窗口短了断言是真的，只是没观察够
+    // ——这个坑 PLAN.md 里已经记过一次。
+    await until(()=>va.chats.some(c=>c.id===NPC.id),40000,'刘正超一句话都没说');
+    const line=va.chats.find(c=>c.id===NPC.id)!;
+    assert.equal(line.kind,'say');
+    assert.ok(line.ms>=CHAT.minMs&&line.ms<=CHAT.maxMs);
+    // 台词要么是普通句原文，要么能匹配上某条点名模板（{name} 处换成任意昵称）。
+    const mentionRe=NPC_MENTION_LINES.map(t=>new RegExp('^'+t.split('{name}').map(s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('(.+)')+'$'));
+    assert.ok(
+      (NPC_LINES as readonly string[]).includes(line.text)||mentionRe.some(re=>re.test(line.text)),
+      `陌生台词：${line.text}`,
+    );
+    assert.ok(!line.text.includes('{name}'),'模板漏出来了');
+    // 快照里彻底没有 say 了——留着就是两套机制并存
+    for(const e of va.snap!.enemies) assert.equal((e as any).say,undefined,'快照里还带着 say');
   } finally { for(const r of rooms)await leave(r); await stop(server); await rm(data,{recursive:true,force:true}); }
 });

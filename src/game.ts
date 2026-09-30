@@ -218,9 +218,8 @@ export class OfficeScene extends Phaser.Scene {
       v.health.fillStyle(0x17202a).fillRect(v.sprite.x-32, barY, 64, 5);
       v.health.fillStyle(0xd4a2f5).fillRect(v.sprite.x-32, barY, 64*actor.hp/(actor as Enemy).maxHp, 5);
     }
-    const line = 'say' in actor ? (actor as Enemy).say : undefined;
-    v.bubble.setVisible(!!line && actor.hp > 0);
-    if (line) v.bubble.setText(line).setPosition(v.sprite.x, v.sprite.y - (office ? OFFICE_BUBBLE_UP : height + 44));
+    // 临时：say 字段已从快照删除，气泡改读客户端事件表由下一个任务接手。
+    v.bubble.setVisible(false);
     v.shadow.setPosition(v.sprite.x, office ? v.sprite.y + 12 : WORLD.floor).setVisible(actor.hp > 0);
   }
   /** Opening: hold the whole floor for a beat, then push into wherever the server spawned us.
