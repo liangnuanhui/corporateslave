@@ -52,7 +52,10 @@ export class OfficeScene extends Phaser.Scene {
   private touch = { left: false, right: false, up: false, down: false, jump: false, attack: false };
   private preview?: Phaser.GameObjects.Sprite;
   private offline!: Phaser.GameObjects.Text;
-  constructor(private network: Network, private blocked: () => boolean, private interact: () => void) { super('office'); }
+  /** `blocked`：键盘现在归别人（对话框 / 聊天框）。`canChat`：现在到底能不能发话
+   *  （开场动画放完了、且有工牌）。两个都是外部注入的纯判断——场景不自己去读
+   *  network.profile，否则「什么时候算就绪」就有了第二套规则，两套一定会漂。 */
+  constructor(private network: Network, private blocked: () => boolean, private interact: () => void, private canChat: () => boolean) { super('office'); }
   preload() {
     this.load.image('office', '/assets/office.png');
     this.load.image('atlas', '/assets/atlas.png');
@@ -166,8 +169,11 @@ export class OfficeScene extends Phaser.Scene {
     }
     if (!blocked && Phaser.Input.Keyboard.JustDown(this.keys.E)) this.interact();
     // 数字键表情。和 E 一样受 blocked 管：在聊天框里打「1」不能触发挥手。
+    // 同时受 canChat 管：发表情和按 Enter 说话是同一个能力的两个入口，就绪规则只能有一套。
+    // 少了它，开场动画期间没有对话框打开、blocked 为假、房间也 join 了，按「1」就真发出去了，
+    // 而同一时刻的 Enter 被挡着。
     // 显式映射表，不靠 EMOTES 的顺序推算键名——顺序是排版决定的，改一下就静默错位。
-    if (!blocked) for (const emote of EMOTES) {
+    if (!blocked && this.canChat()) for (const emote of EMOTES) {
       const key = this.keys[PHASER_DIGIT[emote.key]];
       if (key && Phaser.Input.Keyboard.JustDown(key)) { this.network.room?.send('chat', { emote: emote.id }); break; }
     }
@@ -308,8 +314,8 @@ export class OfficeScene extends Phaser.Scene {
     window.dispatchEvent(new CustomEvent('game-sound', { detail: data.id === this.network.profile?.id ? 'hurt' : 'hit' }));
   }
 }
-export function createGame(network: Network, blocked: () => boolean, interact: () => void) {
-  const scene = new OfficeScene(network, blocked, interact);
+export function createGame(network: Network, blocked: () => boolean, interact: () => void, canChat: () => boolean) {
+  const scene = new OfficeScene(network, blocked, interact, canChat);
   const game = new Phaser.Game({ type: Phaser.AUTO, parent: 'game', width: WORLD.width, height: WORLD.height,
     backgroundColor:'#1a212b', pixelArt: true, roundPixels: true,
     input: { mouse: { preventDefaultWheel: true }, touch: true },

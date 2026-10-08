@@ -47,11 +47,14 @@ let openingDone = false;
 // 必须带 | undefined：blocked 的闭包在 chat 被赋值之前就交给了 createGame，
 // 类型上不承认这一点的话 tsc 会拦下 `chat?.`。
 let chat: ReturnType<typeof createChatInput> | undefined;
-const { scene } = createGame(network, () => !!document.querySelector('dialog[open]') || !!chat?.isOpen(), interact);
+// 「现在能不能发话」只定义这一次：Enter 开聊天框和数字键发表情是同一个能力的两个入口，
+// 各写一份就会漂——开场动画期间按 1 能发表情而 Enter 不能，就是这么来的。
+const canChat = () => openingDone && !!network.profile;
+const { scene } = createGame(network, () => !!document.querySelector('dialog[open]') || !!chat?.isOpen(), interact, canChat);
 bindMapPanel(scene, network);
 chat = createChatInput({
   send: payload => network.room?.send('chat', payload),
-  canChat: () => openingDone && !!network.profile,
+  canChat,
   // 开场还没放完时按 Enter 什么都不做（那时 Enter 归「跳过」）；
   // 放完了但没工牌，就和按 J / 按 E / 点商店一样弹工牌对话框。
   onRefused: () => { if (openingDone && !network.profile) show(authDialog); },
