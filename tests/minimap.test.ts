@@ -1,12 +1,22 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { corridor, meeting, storage, CORRIDOR_ROOMS, projectTo } from '../shared/world/index.js';
-import type { Actor } from '../shared/game.js';
+import { NPC, type Actor, type Enemy } from '../shared/game.js';
 import { minimapDots, corridorMarkup, roomMarkup, minimapBubbles, bubbleMarkup } from '../src/minimap.js';
 
 const actor = (overrides: Partial<Actor>): Actor => ({
   id: 'a', name: '摸鱼员', role: 'junior', x: 0, y: 0, vy: 0, face: 1,
   hp: 100, weapon: 'foam', action: 'idle', ack: 0, area: 'corridor', ...overrides,
+});
+
+/** 刘正超在快照里的形状：`snapshot.enemies` 的一条，**不是** Actor——没有 role、没有
+ *  weapon、没有 ack。这个区别不是洁癖：他从来不在 `snapshot.players` 里，而小地图原先
+ *  只收 players，于是 byId.get('colleague') 恒为 undefined，他说的每一句都被跳过。
+ *  那个 bug 过了九次 review，就是因为测试把他构造成 actor({ id: 'colleague' })——
+ *  一个披着玩家外壳的 NPC，真实调用点从不产生这种形状。所以这里按真实形状构造。 */
+const boss = (overrides: Partial<Enemy> = {}): Enemy => ({
+  id: NPC.id, name: NPC.name, x: 0, y: 0, hp: 120, maxHp: 120,
+  face: -1, action: 'idle', area: 'meeting', ...overrides,
 });
 
 test('corridor view leaves a corridor-local player at their raw coordinates', () => {
@@ -84,12 +94,48 @@ test('小地图气泡截短，最多两条', () => {
   assert.equal(out[0].text, '这是一句很长…');   // 这是一句很长 = 6 个字，再加省略号
 });
 
-test('点名到自己的那句被标成 mine', () => {
-  const boss = actor({ id: 'colleague', area: 'meeting', x: 150, y: 84 });
-  const out = minimapBubbles(corridor, [boss], [{ id: 'colleague', text: '这个 摸鱼小王 处理一下。' }], '摸鱼小王');
-  assert.equal(out[0].mine, true);
-  const other = minimapBubbles(corridor, [boss], [{ id: 'colleague', text: '这个 别人 处理一下。' }], '摸鱼小王');
-  assert.equal(other[0].mine, false);
+test('隔壁房间的刘正超说的话落在小地图上——他活在 enemies 里，不在 players 里', () => {
+  // 真实调用点（src/map-panel.ts）喂进来的是 [...snapshot.players, ...snapshot.enemies]。
+  // 这条测试的形状必须和那里一致：玩家是 Actor，他是 Enemy。只传 players 的那个版本
+  // 会在这里变红——而这正是「他从隔壁点你的名」这个功能存在的理由。
+  const me = actor({ id: 'me', area: 'corridor', x: 500, y: 300 });
+  const him = boss({ area: 'meeting', x: 150, y: 84 });
+  const out = minimapBubbles(corridor, [me, him], [{ id: NPC.id, text: '摸鱼小王 辛苦一下，今天之内。', to: '摸鱼小王' }], '摸鱼小王');
+  assert.equal(out.length, 1, '他的发言被小地图整个跳过了');
+  assert.equal(out[0].id, NPC.id);
+  assert.deepEqual({ x: out[0].x, y: out[0].y }, projectTo(meeting, 150, 84), '气泡该落在他投影出的位置旁');
+  assert.equal(out[0].mine, true, '点名到自己的那句该是薄荷绿');
+});
+
+test('他在小地图上有自己的光点，而且和玩家区分得开', () => {
+  // 不加这个点，气泡会飘在一个没有任何标记的位置旁边。
+  const me = actor({ id: 'me', area: 'corridor', x: 500, y: 300 });
+  const dots = minimapDots(corridor, [me], 'me', [boss({ area: 'meeting', x: 150, y: 84 })]);
+  const mine = dots.find(d => d.id === 'me')!, his = dots.find(d => d.id === NPC.id)!;
+  assert.ok(his, '他在小地图上没有光点');
+  assert.deepEqual({ x: his.x, y: his.y }, projectTo(meeting, 150, 84), '他的光点该投影进会议室的格子');
+  assert.equal(his.npc, true, '他该被标成 npc，调用方据此换色');
+  assert.equal(mine.npc, false);
+  assert.equal(his.self, false);
+});
+
+test('点名以服务器带来的 to 为准，子串撞车不算点名', () => {
+  // 中文没有词边界：原先判的是 text.includes(selfName)，昵称「小王」会把一句
+  // 点名「小王八」的话高亮成你的；真人玩家随口提到你的昵称也会被标成点名。
+  const him = boss({ area: 'meeting', x: 150, y: 84 });
+  const other = actor({ id: 'other', name: '小王八', area: 'storage', x: 100, y: 100 });
+  const hit = minimapBubbles(corridor, [him], [{ id: NPC.id, text: '这个 小王 处理一下。', to: '小王' }], '小王');
+  assert.equal(hit[0].mine, true);
+  const nearMiss = minimapBubbles(corridor, [him], [{ id: NPC.id, text: '这个 小王八 处理一下。', to: '小王八' }], '小王');
+  assert.equal(nearMiss[0].mine, false, '点的是小王八，不该高亮成小王的');
+  const human = minimapBubbles(corridor, [other], [{ id: 'other', text: '小王你在吗' }], '小王');
+  assert.equal(human[0].mine, false, '真人提到你的昵称不是点名');
+});
+
+test('躺平的人的话不落在小地图上，和头顶气泡同一条不变量', () => {
+  const downed = boss({ area: 'meeting', x: 150, y: 84, hp: 0 });
+  const out = minimapBubbles(corridor, [downed], [{ id: NPC.id, text: '这个得拉个群对齐一下。' }]);
+  assert.equal(out.length, 0, '躺平的人不说话——头顶那边已经这么判了');
 });
 
 test('小地图气泡的标记把文本转义了', () => {

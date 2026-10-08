@@ -59,7 +59,10 @@ export class WorldRoom extends Room {
     this.onMessage('chat', (client, data: unknown) => {
       const p = this.players.get(client.sessionId);
       if (!p || p.dropped) return;
-      // 限流在最前：畸形消息也走这条路，否则刷畸形包能绕开冷却去压 CPU。
+      // 限流只管**被接受**的消息：chatAt 仅在广播成功的那几条路上盖戳，所以畸形包
+      // （非法 emote、空白文本）被丢弃时不盖戳，也就不受冷却约束。这是有意接受的：
+      // ws-transport 的 maxPayload 默认 4KB，一个畸形包的开销是微秒级，不构成 DoS，
+      // 为它加一道机制是给不存在的威胁加防御。
       // 回一条「说太快了」反而给刷屏者一个可以刷的东西，所以静默丢弃。
       if (this.elapsed - p.chatAt < CHAT.cooldownMs) return;
       const body = (data ?? {}) as { text?: unknown; emote?: unknown };
@@ -227,9 +230,16 @@ export class WorldRoom extends Room {
   }
   private clientOf(sessionId: string) { return this.clients.find(c => c.sessionId === sessionId); }
   /** 一句话是事件不是状态：只过一次网，客户端自己管过期。快照里不留任何痕迹——
-   *  快照每 2 tick 全量重发，把话放进去就等于每秒重复它 15 次。 */
-  private say(id: string, text: string, kind: ChatEvent['kind']) {
-    this.broadcast('chat', { id, text, kind, ms: bubbleMs(text) } satisfies ChatEvent);
+   *  快照每 2 tick 全量重发，把话放进去就等于每秒重复它 15 次。
+   *
+   *  净化放在这里，广播通道上因此只有一个收窄点：进 broadcast 的文本一律先过
+   *  sanitizeChat()。玩家那条路进来时已经净化过一次（幂等，那边还要用它判断
+   *  「净化后为空就不盖 chatAt」），NPC 的点名句里嵌着玩家自己起的昵称，而昵称
+   *  在注册时只校验了非空和长度——换行没被拒过。将来任何新的调用方也自动被盖住。 */
+  private say(id: string, text: string, kind: ChatEvent['kind'], to?: string) {
+    const clean = sanitizeChat(text);
+    if (!clean) return;
+    this.broadcast('chat', { id, text: clean, kind, ms: bubbleMs(clean), ...(to ? { to } : {}) } satisfies ChatEvent);
   }
   /** The server switches area immediately; the client's fade is pure presentation. */
   private tryExit(sessionId: string, p: Player, area: Area) {
@@ -279,7 +289,10 @@ export class WorldRoom extends Room {
     if (this.elapsed >= npc.sayAt) {
       // 全楼层在线玩家的昵称——他点名只点得到还在公司里的人。
       const names = [...this.players.values()].filter(p => !p.dropped).map(p => p.name);
-      this.say(npc.id, pickLine(names), 'say');
+      // 点了谁由服务器随句子一起带出去：客户端拿它判断「这句是不是冲我来的」，
+      // 不必回头拿昵称去子串匹配句子（中文没有词边界，那样匹配是错的）。
+      const line = pickLine(names);
+      this.say(npc.id, line.text, 'say', line.to);
       npc.sayAt = this.elapsed + NPC.sayEveryMinMs + Math.random() * (NPC.sayEveryMaxMs - NPC.sayEveryMinMs);
     }
 

@@ -104,16 +104,21 @@ export const NPC_MENTION_LINES: readonly string[] = [
 
 /** 他这次说什么。三成概率点名，但**名单为空时整类跳过**——这不是新发明：走廊没有工位，
  *  spotAtDesk(corridor) 返回 undefined，抽到「回工位」就退化成「玩手机」。同样地，
- *  没人可点就不点，而不是点一个叫 undefined 的同事。 */
-export function pickLine(names: readonly string[], random: () => number = Math.random): string {
+ *  没人可点就不点，而不是点一个叫 undefined 的同事。
+ *
+ *  返回的是 { text, to }，不只是句子：点了谁必须由服务器说清楚，不能让客户端回头去猜。
+ *  中文没有词边界，拿昵称去 includes() 匹配句子，「小王」会把一句点名「小王八」的话
+ *  认成点自己；真人玩家打出一句恰好含你昵称的话也会被认成点名。规则是「服务器替换进去的
+ *  那个名字才算点名」，所以把它跟着句子一起带出来。 */
+export function pickLine(names: readonly string[], random: () => number = Math.random): { text: string; to?: string } {
   if (names.length && random() < .3) {
     const template = NPC_MENTION_LINES[Math.floor(random() * NPC_MENTION_LINES.length)];
     const name = names[Math.floor(random() * names.length)];
     // 替换函数，不是字符串：字符串参数里的 $& 会被当成「匹配到的内容」展开，
     // 于是一个叫 $& 的玩家能让点名句里冒出字面量 {name}。
-    return template.replace('{name}', () => name);
+    return { text: template.replace('{name}', () => name), to: name };
   }
-  return NPC_LINES[Math.floor(random() * NPC_LINES.length)];
+  return { text: NPC_LINES[Math.floor(random() * NPC_LINES.length)] };
 }
 
 /** 下一段要做什么：走动、回工位、或者掏出手机。走动占一半，因为静止的同事看着像雕像。 */
@@ -130,7 +135,10 @@ export const CHAT = {
   cooldownMs: 1200,
 } as const;
 
-export interface ChatEvent { id: string; text: string; kind: 'say' | 'emote'; ms: number }
+/** 一条广播出去的话。恰好这些字段，多一个都要有理由：它跨服务器、共享层、气泡表、
+ *  小地图四层，任何一个字段都得四处都有人认。`to` 是被点名者的昵称，只有 NPC 的点名句
+ *  才有——判断「这句是不是冲我来的」用它，而不是拿昵称去子串匹配句子。 */
+export interface ChatEvent { id: string; text: string; kind: 'say' | 'emote'; ms: number; to?: string }
 
 export type EmoteId = 'wave' | 'clap' | 'sigh' | 'nod' | 'shrug' | 'busy';
 /** 数字键和斜杠命令读同一张表，所以「双入口」不会漂成两份文案。 */

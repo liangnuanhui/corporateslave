@@ -108,11 +108,18 @@ export function bindMapPanel(scene: OfficeScene, network: Network) {
     document.querySelector('.stage')!.classList.toggle('is-dungeon', !office);
     const player = snapshot?.players.find(p => p.id === network.profile?.id);
     const area = AREAS[shownArea];
-    const dot = (d: MinimapDot) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.self ? '#c0f3c8' : '#e4c88d'}" stroke="#172b24" stroke-width="12"/>`;
+    // 三种光点，三个既有色号，不新增：自己是薄荷绿（和名牌同色），别的玩家是米白，
+    // 那位同事是暖橙——就是场景里给他上的那层暖色调（src/game.ts 的 0xf0c49c）。
+    // 必须分得出来：他是这层楼唯一一个不是自己人的常住人口，也是你要找的那个目标，
+    // 混在玩家里会让「会议室里那个点」看着像个同事玩家。
+    const dot = (d: MinimapDot) => `<circle cx="${d.x}" cy="${d.y}" r="${d.r}" fill="${d.self ? '#c0f3c8' : d.npc ? '#f0c49c' : '#e4c88d'}" stroke="#172b24" stroke-width="12"/>`;
     const players = snapshot?.players ?? [];
-    const dots = office ? minimapDots(area, players, player?.id).map(dot).join('') : '';
+    // 他活在 snapshot.enemies 里，从来不在 players 里：只传 players 的话，他的光点和
+    // 他说的每一句都会被小地图整个跳过——而「隔壁房间的领导点你的名」正是小地图气泡的理由。
+    const npcs = snapshot?.enemies ?? [];
+    const dots = office ? minimapDots(area, players, player?.id, npcs).map(dot).join('') : '';
     const bubbles = office
-      ? minimapBubbles(area, players, scene.bubbles.live(), network.profile?.name).map(bubbleMarkup).join('')
+      ? minimapBubbles(area, [...players, ...npcs], scene.bubbles.live(), network.profile?.name).map(bubbleMarkup).join('')
       : '';
     get('map-players').innerHTML = dots + bubbles;
     const room = player && player.area === 'corridor' ? roomAt(player.x, player.y) : undefined;
