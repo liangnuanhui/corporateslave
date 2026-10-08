@@ -2,6 +2,9 @@
 
 Current scope: browser multiplayer, fictional company and characters, and an overhead office floor with zoomable navigation. The side-view cooperative dungeon still exists in the server and in the scene's render paths, but no UI reaches it — see 「界面收窄 — 2026-09-24」 below. Target architecture supports multiple office/dungeon rooms; 200 CCU is a later load-test target, not an MVP performance claim.
 
+**接手这个项目，先读「现在到哪了，下一步做什么 — 2026-10-08」那一节**（就在 Bounds 下面）：
+它列了能玩到什么、什么走不到、哪些坑会让你白花时间。
+
 ## Implementation
 1. Phaser browser app and Colyseus authoritative room server.
 2. Account/password login, durable PostgreSQL data (PGlite locally, DATABASE_URL in deployment), unique sessions.
@@ -17,6 +20,67 @@ No real-person targeting, office scans, PvP, trading, offline AI, or production 
 
 Chat exists as of 2026-09-30, in exactly one form: typed lines and six emotes become an overhead
 bubble that expires. There is no log, no history and no persistence — a line that has faded is gone.
+
+## 现在到哪了，下一步做什么 — 2026-10-08
+
+接手时先读这一节。下面每条都核过代码，不是凭印象。
+
+### 能玩到的
+
+注册 / 登录 → 全国地图开场 → 走廊，加大会议室与储物间两个房间，走门转场、3/4 斜视、
+相机缩放平移、小地图。按 `J` 打刘正超（他自己走动、回工位、玩手机、说废话、点名你）。
+按 `Enter` 打字、`1`–`6` 或 `/挥手` 发表情，全楼层广播，隔壁的话落在小地图上。
+
+80 条自动化测试，`npm run build` 通过。
+
+### 走不到或坏掉的，按「用户多容易撞上」排序
+
+1. **经济是个死循环，这条最容易撞上。** 初始 30 积分（`server/database.ts:42`），最便宜的
+   付费武器 60，而唯一的收入是副本通关 `+80`（`database.ts:83`）——副本的入口在
+   「界面收窄 — 2026-09-24」那次全部删掉了，`src/` 里没有任何代码会 join 它。所以
+   **没有任何办法赚到第二把武器**，而商店的报错还写着「积分不足，先去副本完成挑战吧」，
+   指向一个去不了的地方。要么给办公室一个积分来源，要么把副本入口加回来，要么改报错——
+   但不能三样都不做。
+
+2. **四个房间还锁着**：办公室 1/2、休息区、茶水间。机制已就位，开一间 = 在
+   `shared/world/corridor.ts:61` 的 `OPEN` 里加一项 + 供一份 interior；现在踏门回
+   「XX还在装修中，敬请期待」。主要成本是内容量（家具布局、出生点、小地图投影、每间的测试）。
+
+3. **房间里看不到别处的话。** 全楼层广播在走廊上完整，进了房间只兑现一半。有意接受的
+   取舍，理由见「办公室里说得上话了」那节。要补就得先回答「房间平面图上用什么代表别处」。
+
+4. **刘正超不还手，打倒他不给积分。**
+
+5. **玩家之间除了聊天零互动**：没有成员名单、没有 PvP、没有聊天记录面板。后两样在
+   Bounds 里仍是明确排除的。
+
+### 23 条浏览器验证一条都没验
+
+`docs/qa/2026-09-30-office-chat.md`。不是走流程：中文输入法那条无法自动化（需要真实
+输入法），而小地图那三条是某个修复**唯一的**凭据——已实测确认，把 `src/map-panel.ts`
+的调用点改回出 bug 的写法，37 条单测照样全绿。
+
+### 接手前要知道的四个坑
+
+- **不要整文件跑 `tests/multiplayer.test.ts`。** 里面有条 210 秒超时的集成测试，跑起来
+  约 60–85 秒且中途几乎无输出；本轮有两个 agent 因此被 watchdog 判成「无进展」杀掉。
+  开发时用 `--test-name-pattern` 跑单条，全量只在最后跑一次。
+- **`src/map-panel.ts` 是 DOM 代码**（`innerHTML` / `getElementById`），`node:test` 到不了。
+  它里面的 bug 只有浏览器能抓。要让它可测，得把「快照 → 标记」这一步抽成纯函数。
+- **测试替身要长成生产调用点真正会产生的形状。** 本轮最严重的那个 bug 躲过了九次 review，
+  就是因为单测把 NPC 构造成了一个「披着玩家外壳」的对象，而真实调用点从不产生那种形状——
+  单测绿着，给了一个没有测试的调用点以虚假的信心。
+- **`server/database.ts:38` 的昵称校验只查非空和 ≤12 码点**，不拒绝内部的 `\n` 或控制字符。
+  广播通道已经在 `say()` 里收窄净化，但原始字符串仍然存在 profile、`snapshot.players[].name`
+  和 `ChatEvent.to` 里。根治是在注册处拒掉。
+
+### 三条已知但判为不阻塞的小问题
+
+- `tests/multiplayer.test.ts` 的 `assert.equal(va.hits.length, 1)` 隐含依赖「办公室同事不还手」
+  这个 zone 门控。他哪天会还手了，这条会以一个和它的主张无关的理由变红。
+- 同文件 `claim` 之后那处 `until(() => va.notices.length > 0)` 仍是裸长度判断，可能被走廊
+  锁门的「装修中」提示满足；后续的 `coins === 30` 仍承载真正的主张。
+- `src/minimap.ts` 的 `Located` 要求 `hp`，但 `minimapDots` 并不读它，参数类型过约束。
 
 ## 办公室里说得上话了 — 2026-09-30
 
