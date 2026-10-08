@@ -27,7 +27,11 @@ async function start(data:string) {
 async function stop(child:ChildProcess){if(child.exitCode!==null)return; const closed=new Promise<void>(r=>child.once('exit',()=>r())); child.kill('SIGTERM');await closed;}
 async function leave(room:Room){if(room.connection.isOpen)await room.leave();}
 async function register(username:string){ const r=await fetch(base+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password:'mvp-test-password',name:username,role:'rookie'})});assert.equal(r.status,200);return r.json() as Promise<{token:string;profile:Profile}>; }
-function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notice?:string;transition?:{to:string;name:string};hits:{id:string;damage:number}[];chats:ChatEvent[]}={hits:[],chats:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notice=data;else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);else if(type==='chat')value.chats.push(data);});room.send('sync');return value;}
+// notice 是数组，和 hits/chats 一样——不是单槽。走廊上四道锁门的触发器每 2.5 秒就会给
+// 站在上面的玩家发一条「…还在装修中，敬请期待」，而追着刘正超打那二十几秒会满走廊跑，
+// 有十来次机会停在触发器上。单槽会被这些提示**冲掉**，于是「躺平」那条断言偶发超时——
+// 提示其实早就送到了，只是被覆盖了。所以全留着，断言用 .some()。
+function watch(room:Room){const value:{snap?:Snapshot;profile?:Profile;reward?:any;notices:string[];transition?:{to:string;name:string};hits:{id:string;damage:number}[];chats:ChatEvent[]}={notices:[],hits:[],chats:[]};room.onMessage('*',(type,data)=>{if(type==='snapshot')value.snap=data;else if(type==='profile')value.profile=data;else if(type==='reward')value.reward=data;else if(type==='notice')value.notices.push(data);else if(type==='transition')value.transition=data;else if(type==='hit')value.hits.push(data);else if(type==='chat')value.chats.push(data);});room.send('sync');return value;}
 
 test('two-player rooms, server combat, unique session, reward replay and disk recovery', {timeout:210000}, async()=>{
   const data=await mkdtemp(join(tmpdir(),'niuma-test-'));let server=await start(data);const rooms:Room[]=[];
@@ -116,7 +120,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
     for (const room of [...CORRIDOR_ROOMS].sort((a, b) => a.x - b.x)) {
       const door = doorway(room), fromAbove = room.door === 'top';
       const open = room.id === 'meeting' || room.id === 'storage';
-      va.notice = undefined; va.transition = undefined;
+      va.notices.length = 0; va.transition = undefined;
       await walkTo('x', door.x);
       await walkTo('y', door.y + (fromAbove ? -60 : 60));
       for (let i = 0; i < 20; i++) { ra.send('input', { up: !fromAbove, down: fromAbove, seq: ++officeSeq }); await pause(34); }
@@ -146,8 +150,8 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
         // entry geometrically).
         assert.equal(myself().area, 'corridor', `${room.name} 不应该能进入`);
         assert.equal(roomAt(myself().x, myself().y), undefined, `${room.name} 不应该被走进去`);
-        await until(() => !!va.notice, 10000);
-        assert.ok(va.notice!.includes(room.name), `${room.name} 的提示应该点名房间 (got: ${va.notice})`);
+        await until(() => va.notices.some(n => n.includes(room.name)), 10000);
+        assert.ok(va.notices.some(n => n.includes(room.name)), `${room.name} 的提示应该点名房间 (got: ${va.notices.join(' | ')})`);
         assertAgree();
       }
       await walkTo('y', corridor.spawnPoints[0].y);
@@ -226,14 +230,23 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       if (Math.abs(side) >= 8) for (let i = 0; i < 2; i++) { ra.send('input', { right: side > 0, left: side < 0, seq: ++officeSeq }); await pause(34); }
       const expected = damageFor(a.profile.role, a.profile.weapon);
       const startHp = target().hp;
-      va.hits.length = 0; vb.hits.length = 0; va.notice = undefined;
+      va.hits.length = 0; vb.hits.length = 0; va.notices.length = 0;
       // 每次挥击前先补上距离——击退会把他推开，真人也是边打边跟上去的。
       const swing = async () => {
         if (Math.hypot(target().x - myself().x, target().y - myself().y) > 26) await approach();
         ra.send('input', { attack: true, seq: ++officeSeq }); await pause(60);
         ra.send('input', { seq: ++officeSeq }); await pause(560);
       };
-      await swing();
+      // 要证明的是「**一次打中**的挥击正好扣 18」，而不是「这一次挥击一定打中」——后者
+      // 被他自己走动证伪了：approach() 用 va.snap 判「够近了」，而快照最多滞后约 100ms，
+      // 之后还有约 128ms 的转向输入才到攻击那一拍；他以 96 px/s 走动，meleeHits 要求 64px
+      // 以内，所以一份说「够近了」的快照到结算时可能已经过期，断言就报 hp 没掉。
+      // 打两次在算术上不可能（server/world.ts 的 550ms 攻击间隔 vs swing 只保持 attack 约 60ms），
+      // 所以只补「打空」这一种情况：挥到打中为止，再断言扣血，并钉住只打中了一次。
+      const hitHim = () => va.hits.some(h => h.id === NPC.id);
+      for (let i = 0; i < 5 && !hitHim(); i++) await swing();
+      assert.ok(hitHim(), `挥了 5 次都没打中 ${NPC.name}`);
+      assert.equal(va.hits.length, 1, `一次挥击只该结算一次 (got: ${JSON.stringify(va.hits)})`);
       assert.equal(target().hp, startHp - expected, `一击应该扣 ${expected} 点血`);
       assert.ok(va.hits.some(h => h.id === NPC.id && h.damage === expected), '攻击者应该收到 hit 广播');
       await until(() => vb.snap!.enemies.find(e => e.id === NPC.id)!.hp === startHp - expected);
@@ -242,8 +255,9 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       // 打到躺平，验证死亡提示与重新出现时的重新抽取。
       for (let i = 0; i < 40 && target().hp > 0; i++) await swing();
       assert.equal(target().hp, 0, `${NPC.name} 应该被打倒`);
-      await until(() => !!va.notice && va.notice.includes(NPC.name), 4000);
-      assert.ok(va.notice!.includes('躺平'), `倒下时应该有提示 (got: ${va.notice})`);
+      const downNotice = () => va.notices.some(n => n.includes(NPC.name) && n.includes('躺平'));
+      await until(downNotice, 4000);
+      assert.ok(downNotice(), `倒下时应该有提示 (got: ${va.notices.join(' | ')})`);
       const downed = { area: target().area, x: target().x, y: target().y };
       await until(() => target().hp > 0, NPC.respawnMs + 6000);
       const back = target();
@@ -308,7 +322,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       const reconnected = new Promise<void>(resolve => ra.onReconnect.once(resolve));
       void ra.leave(false).catch(() => {});
       await reconnected;
-      va.notice = undefined; va.snap = undefined; // clear pre-drop snapshot so the check below can't pass on stale data
+      va.notices.length = 0; va.snap = undefined; // clear pre-drop snapshot so the check below can't pass on stale data
       ra.send('sync');
       await until(() => !!va.snap?.players.find(p => p.id === a.profile.id), 10000);
       const after = va.snap!.players.find(p => p.id === a.profile.id)!;
@@ -319,7 +333,7 @@ test('two-player rooms, server combat, unique session, reward replay and disk re
       await until(() => myself().area === 'corridor', 10000);
       await walkTo('y', corridor.spawnPoints[0].y);
     }
-    ra.send('claim');await until(()=>!!va.notice);
+    ra.send('claim');await until(()=>va.notices.length>0);
     assert.equal((await fetch(base+'/api/me',{headers:{Authorization:`Bearer ${a.token}`}}).then(r=>r.json())).coins,30);
     await ra.leave();
     const dungeon=await sdk.joinOrCreate('world',{zone:'dungeon',token:a.token});rooms.push(dungeon);const vd=watch(dungeon);
